@@ -29,18 +29,18 @@ The proposed solution migrates the platform to a **Databricks Medallion Architec
 
 The modernization is divided into 10 high-impact phases.
 
-| Phase | Focus | Estimated Timeframe |
-| :--- | :--- | :--- |
-| **Phase 1** | **Foundation:** Storage & Delta Optimization | 2 Days |
-| **Phase 2** | **Governance:** Unity Catalog & Security | 3 Days |
-| **Phase 3** | **Compute:** Serverless SQL & FinOps | 2 Days |
-| **Phase 4** | **Ingestion:** Auto Loader & Schema Evolution | 4 Days |
-| **Phase 5** | **Transformation:** Medallion & SCD Type 2 | 5 Days |
-| **Phase 6** | **DevOps:** DABs & GitHub Actions CI/CD | 3 Days |
-| **Phase 7** | **Simulation:** Power Law Data Generation | 2 Days |
-| **Phase 8** | **Strategy:** Design Authority & Defense | 1 Day |
-| **Phase 9** | **Observability:** SLA & Quality Dashboards | 3 Days |
-| **Phase 10** | **Resiliency:** Disaster Recovery & Deep Clones | 2 Days |
+| Phase | Focus | Estimated Timeframe | Started | End |
+| :--- | :--- | :--- |:--- | :--- |
+| **Phase 1** | **Foundation:** Storage & Delta Optimization | 2 Days | 06-Apr-26 | TBD |
+| **Phase 2** | **Governance:** Unity Catalog & Security | 3 Days | TBD | TBD |
+| **Phase 3** | **Compute:** Serverless SQL & FinOps | 2 Days | TBD | TBD |
+| **Phase 4** | **Ingestion:** Auto Loader & Schema Evolution | 4 Days | TBD | TBD |
+| **Phase 5** | **Transformation:** Medallion & SCD Type 2 | 5 Days | TBD | TBD |
+| **Phase 6** | **DevOps:** DABs & GitHub Actions CI/CD | 3 Days | TBD | TBD |
+| **Phase 7** | **Simulation:** Power Law Data Generation | 2 Days | TBD | TBD |
+| **Phase 8** | **Strategy:** Design Authority & Defense | 1 Day | TBD | TBD |
+| **Phase 9** | **Observability:** SLA & Quality Dashboards | 3 Days | TBD | TBD |
+| **Phase 10** | **Resiliency:** Disaster Recovery & Deep Clones | 2 Days | TBD | TBD |
 
 ---
 
