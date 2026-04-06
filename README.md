@@ -1,2 +1,3 @@
-# nexusflow-data-platform
-This repository provides a modular, production-grade Financial Data Lakehouse built on the Databricks Medallion Architecture. It transforms fragmented legacy SQL silos into a unified, governed, and resilient ecosystem capable of handling high-velocity transaction streams.
+# NexusFlow: Enterprise Financial Data Platform
+
+**NexusFlow** is a high-performance, automated data engine designed to replace fragmented legacy financial systems with a unified, governed, and resilient Lakehouse architecture.
