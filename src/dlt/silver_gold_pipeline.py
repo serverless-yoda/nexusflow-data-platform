@@ -1,20 +1,38 @@
+# src/dlt/silver_gold_pipeline.py
 import dlt
+from pyspark.sql.functions import col, upper
+from src.common.governance import GovernanceManager
 
-@dlt.table(name="dim_customers_silver")
-def dim_customers_silver():
-    # 1. Read from Bronze
-    # 2. Apply Cleansing (PII Hashing)
-    return dlt.read("customers_bronze").selectExpr(
-        "customer_id",
-        "sha2(email, 256) as email_hashed",
-        "current_timestamp() as processing_time"
+# 1. SILVER LAYER: Cleaning & Quality
+@dlt.table(
+    name="silver_transactions",
+    comment="Cleaned transactions with regional standardization."
+)
+@dlt.expect_or_drop("valid_amount", "amount > 0") # Phase 6: Data Quality
+@dlt.expect_or_fail("valid_id", "tx_id IS NOT NULL")
+def silver_transactions():
+    return (
+        dlt.read("bronze_transactions")
+        .filter(col("_rescued_data").isNull()) # Only process non-corrupt data
+        .select(
+            "tx_id",
+            "customer_id",
+            col("amount").cast("double"),
+            upper(col("region")).alias("region"), # Standardize for RLS
+            "tx_time"
+        )
     )
 
-# Implementing SCD Type 2 automatically
-dlt.apply_changes(
-    target = "dim_customers_gold",
-    source = "dim_customers_silver",
-    keys = ["customer_id"],
-    sequence_by = "processing_time",
-    stored_as_scd_type = 2 # Automatically tracks history with __start_at/__end_at
+# 2. GOLD LAYER: Business Aggregates
+@dlt.table(
+    name="gold_regional_summary",
+    comment="High-level financial KPIs per region for NZ dashboards."
 )
+def gold_regional_summary():
+    return (
+        dlt.read("silver_transactions")
+        .groupBy("region")
+        .agg({"amount": "sum", "tx_id": "count"})
+        .withColumnRenamed("sum(amount)", "total_revenue")
+        .withColumnRenamed("count(tx_id)", "transaction_volume")
+    )

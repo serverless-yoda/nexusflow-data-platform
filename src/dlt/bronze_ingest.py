@@ -1,37 +1,32 @@
-# dlt/bronze_ingest.py
+# src/dlt/bronze_ingest.py
 import dlt
-from pyspark.sql.functions import current_timestamp, input_file_name
+from pyspark.sql.functions import current_timestamp
+from src.common.secrets import NexusSecrets
 
-# Configuration is managed via the DLT Pipeline settings (JSON)
-# We pull these variables at runtime
-source_path = dlt.get_param("landing_path")
-checkpoint_path = dlt.get_param("checkpoint_path")
+# Initialize secrets (using our Common Manager)
+secrets = NexusSecrets(spark)
+landing_path = "abfss://raw@nexusstorage.dfs.core.windows.net/transactions/"
 
 @dlt.table(
-    name="transactions_bronze",
-    comment="Raw financial transactions ingested via Auto Loader",
+    name="bronze_transactions",
+    comment="Raw transactions ingested via Auto Loader with Rescued Data support.",
     table_properties={
         "quality": "bronze",
-        "delta.appendOnly": "true"
+        "pipelines.reset.allowed": "true"
     }
 )
-@dlt.expect("valid_file_source", "_source_file_path IS NOT NULL")
-def transactions_bronze():
+def bronze_transactions():
     """
-    Ingests raw JSON from the landing zone into the Bronze Delta table.
+    Ingests JSON files from ADLS using Auto Loader.
+    Captures corrupt records in '_rescued_data' to prevent pipeline failure.
     """
     return (
         spark.readStream.format("cloudFiles")
         .option("cloudFiles.format", "json")
-        .option("cloudFiles.schemaLocation", f"{checkpoint_path}/schema/bronze")
         .option("cloudFiles.inferColumnTypes", "true")
-        .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
-        # Captures malformed data without killing the pipeline
-        .option("cloudFiles.rescuedDataColumn", "_rescued_data") 
-        .load(source_path)
-        .select(
-            "*",
-            current_timestamp().alias("_ingestion_timestamp"),
-            input_file_name().alias("_source_file_path")
-        )
+        # The 'Rescued Data' column catches anything that doesn't match the schema
+        .option("cloudFiles.schemaEvolutionMode", "rescue") 
+        .load(landing_path)
+        .withColumn("ingestion_timestamp", current_timestamp())
+        .withColumn("source_file", "_metadata.file_path") # Built-in file tracking
     )
