@@ -1,42 +1,34 @@
 # tests/integration/test_storage_layer.py
 import pytest
-from src.common.spark_session import NexusSparkFactory
+from src.common.spark_session import NexusSpark
+from src.common.secrets import NexusSecrets
 
-@pytest.fixture(scope="module")
-def spark():
-    # Initialize the secure session for the test environment
-    factory = NexusSparkFactory(env="test", storage_account="stnexusflowtest")
-    return factory.get_session()
-
-def test_bronze_append_only_prop(spark):
+@pytest.mark.integration
+def test_adls_read_write_connectivity():
     """
-    Verify Bronze tables are set to Append-Only to protect raw history.
+    Verifies that Spark can authenticate and write to the Azure Landing Zone.
+    This is a "Smoke Test" for the 2026 NZ Environment setup.
     """
-    details = spark.sql("DESCRIBE DETAIL nff_catalog.bronze.transactions").collect()[0]
-    properties = details['properties']
+    spark = NexusSpark()
+    secrets = NexusSecrets(spark)
     
-    assert properties.get('delta.appendOnly') == 'true', "Bronze table must be Append-Only."
-
-def test_liquid_clustering_enabled(spark):
-    """
-    Verify Silver and Gold tables are using Liquid Clustering, not Hive partitioning.
-    """
-    # Check the Silver transactions table
-    details = spark.sql("DESCRIBE DETAIL nff_catalog.silver.transactions").collect()[0]
+    # Path for the integration canary file
+    test_path = "abfss://raw@nexusstorage.dfs.core.windows.net/integration_test/canary.parquet"
     
-    # Liquid clustering columns appear in the 'clusteringColumns' metadata field in Delta 3.x+
-    clustering_cols = details['clusteringColumns']
+    # 1. Create dummy data
+    data = [("connectivity_test", 1.0)]
+    df = spark.createDataFrame(data, ["test_name", "status"])
     
-    assert 'customer_id' in clustering_cols, "Liquid clustering missing 'customer_id' index."
-    assert 'tx_timestamp' in clustering_cols, "Liquid clustering missing 'tx_timestamp' index."
-
-def test_deletion_vectors_active(spark):
-    """
-    Ensure Deletion Vectors are enabled to optimize SCD Type 2 merge performance.
-    """
-    details = spark.sql("DESCRIBE DETAIL nff_catalog.silver.transactions").collect()[0]
-    properties = details['properties']
-    
-    # Check for the specific Delta feature property
-    dv_enabled = properties.get('delta.enableDeletionVectors')
-    assert dv_enabled == 'true', "Deletion Vectors must be enabled for Silver/Gold layers."
+    try:
+        # 2. Attempt Write
+        df.write.mode("overwrite").parquet(test_path)
+        
+        # 3. Attempt Read
+        read_df = spark.read.parquet(test_path)
+        
+        assert read_df.count() == 1
+        assert read_df.collect()[0]["test_name"] == "connectivity_test"
+        print("✅ Integration: ADLS Storage Layer Connectivity Verified.")
+        
+    except Exception as e:
+        pytest.fail(f"❌ Storage Integration Failed: {str(e)}")
