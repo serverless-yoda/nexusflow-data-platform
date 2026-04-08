@@ -3,45 +3,40 @@ from pyspark.sql import SparkSession
 
 class GovernanceManager:
     """
-    Automates the application of Unity Catalog governance policies 
-    (RLS and Masking) across the NexusFlow platform.
+    Enforces Row-Level Security (RLS) and Column Masking.
+    Used to ensure regional data isolation in the NexusFlow catalog.
     """
-    
     def __init__(self, spark: SparkSession, catalog: str = "nff_catalog"):
         self.spark = spark
         self.catalog = catalog
-        self.gov_schema = f"{catalog}.governance"
 
-    def apply_regional_filter(self, table_fqn: str, region_col: str = "region"):
+    def register_security_functions(self):
         """
-        Attaches the standard regional row filter to a table.
+        Initializes the SQL UDFs used for filtering. 
+        Usually called once during Phase 4 (Setup).
         """
-        print(f"🔐 Applying Row Filter to {table_fqn}...")
+        # Row Filter: Checks if user belongs to a group matching the 'region' column
         self.spark.sql(f"""
-            ALTER TABLE {table_fqn} 
-            SET ROW FILTER {self.gov_schema}.region_filter ON ({region_col})
+            CREATE FUNCTION IF NOT EXISTS {self.catalog}.main.regional_filter(region STRING)
+            RETURN is_account_group_member(concat('nff_region_', lower(region)))
+            OR is_account_group_member('nff_admin')
+        """)
+        
+        # Masking Function: Hides PII for anyone not in the 'Data Steward' group
+        self.spark.sql(f"""
+            CREATE FUNCTION IF NOT EXISTS {self.catalog}.main.pii_mask(col STRING)
+            RETURN CASE 
+                WHEN is_account_group_member('nff_data_stewards') THEN col 
+                ELSE '### MASKED ###' 
+            END
         """)
 
-    def mask_pii_column(self, table_fqn: str, column_name: str, mask_type: str = "email"):
-        """
-        Applies a dynamic masking function to a specific PII column.
-        """
-        mask_function = {
-            "email": f"{self.gov_schema}.email_mask",
-            "phone": f"{self.gov_schema}.phone_mask"
-        }.get(mask_type)
+    def apply_policy_to_table(self, schema: str, table: str, region_col: str = "region"):
+        """Attaches the RLS filter to a specific table."""
+        full_path = f"{self.catalog}.{schema}.{table}"
+        self.spark.sql(f"ALTER TABLE {full_path} SET ROW FILTER {self.catalog}.main.regional_filter ON ({region_col})")
 
-        if not mask_function:
-            raise ValueError(f"Unsupported mask type: {mask_type}")
-
-        print(f"🎭 Masking {column_name} in {table_fqn} using {mask_type} logic...")
-        self.spark.sql(f"""
-            ALTER TABLE {table_fqn} 
-            ALTER COLUMN {column_name} SET MASK {mask_function}
-        """)
-
-    def tag_sensitive_data(self, table_fqn: str, level: str = "PII"):
-        """
-        Applies Unity Catalog Tags for automated discovery and auditing.
-        """
-        self.spark.sql(f"ALTER TABLE {table_fqn} SET TAGS ('security_level' = '{level}')")
+    def mask_column(self, schema: str, table: str, column: str):
+        """Attaches a PII mask to a specific column."""
+        full_path = f"{self.catalog}.{schema}.{table}"
+        self.spark.sql(f"ALTER TABLE {full_path} ALTER COLUMN {column} SET MASK {self.catalog}.main.pii_mask")

@@ -1,48 +1,34 @@
 # src/common/spark_session.py
 from pyspark.sql import SparkSession
-from pyspark.dbutils import DBUtils
+import os
 
 class NexusSparkFactory:
     """
-    Centralized Factory to generate a secure, production-grade Spark Session
-    for the NexusFlow platform.
+    Centralized Factory for NexusFlow Spark Sessions.
+    Handles environment-specific configs for the NZ region.
     """
-    
-    def __init__(self, env: str, storage_account: str):
-        self.env = env
-        self.storage_account = storage_account
-        self.spark = SparkSession.builder.getOrCreate()
-        self.dbutils = DBUtils(self.spark)
-        self.scope = "nff-secrets" # Defined in Phase 2 Terraform
+    _instance = None
 
-    def _apply_storage_security(self):
-        """
-        Fetches credentials from Azure Key Vault via Secret Scope
-        and injects them into the Spark Context.
-        """
-        try:
-            # Securely fetch the key - this value is masked in logs
-            storage_key = self.dbutils.secrets.get(
-                scope=self.scope, 
-                key="storage-account-key"
-            )
+    @staticmethod
+    def get_session(app_name: str = "NexusFlow-Task"):
+        """Returns the optimized Spark session."""
+        if NexusSparkFactory._instance is None:
+            # Determine environment
+            env = os.getenv("NEXUS_ENV", "dev")
             
-            # Configure ADLS Gen2 Connectivity
-            self.spark.conf.set(
-                f"fs.azure.account.key.{self.storage_account}.dfs.core.windows.net",
-                storage_key
-            )
-        except Exception as e:
-            raise PermissionError(f"Failed to secure Spark Session: {str(e)}")
+            builder = SparkSession.builder.appName(app_name)
+            
+            # 1. Apply Global Optimizations (2026 Standards)
+            builder.config("spark.databricks.delta.optimizeWrite.enabled", "true")
+            builder.config("spark.databricks.delta.autoCompact.enabled", "true")
+            
+            # 2. Apply Environment-Specific Configs
+            if env == "prod":
+                builder.config("spark.databricks.io.cache.enabled", "true") # Faster IO for Gold layer
+            
+            NexusSparkFactory._instance = builder.get_OrCreate()
+            
+        return NexusSparkFactory._instance
 
-    def get_session(self):
-        """
-        Returns the configured Spark session.
-        """
-        self._apply_storage_security()
-        
-        # Optimize for 2026 Databricks Runtimes (Liquid Clustering Support)
-        self.spark.conf.set("spark.databricks.delta.optimizeWrite.enabled", "true")
-        self.spark.conf.set("spark.databricks.delta.autoCompact.enabled", "true")
-        
-        return self.spark
+# Alias for ease of use in notebooks
+NexusSpark = NexusSparkFactory.get_session
