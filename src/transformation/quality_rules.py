@@ -1,33 +1,25 @@
-# src/transformation/quality_rules.py
+# src/sql/transformations/quality_rules.py
 
-class NexusQualityRules:
+class QualityRules:
     """
-    Centralized repository of Data Quality 'Expectations' 
-    for the NexusFlow Medallion layers.
+    Centralized repository of Data Quality expectations.
+    Returns dictionaries compatible with DLT @dlt.expect decorators.
     """
 
     @staticmethod
-    def get_bronze_expectations():
-        """Basic structural integrity for raw ingestion."""
+    def get_transaction_rules():
+        """Rules for the Silver Transactions layer."""
         return {
-            "valid_json": "_rescued_data IS NULL",
-            "has_source": "_source_file_path IS NOT NULL"
+            "valid_id": "tx_id IS NOT NULL",
+            "positive_amount": "amount > 0",
+            "known_region": "region IN ('AUCKLAND', 'WELLINGTON', 'CHRISTCHURCH', 'HAMILTON')",
+            "future_date_check": "tx_time <= current_timestamp()"
         }
 
     @staticmethod
-    def get_silver_transaction_rules():
-        """Critical financial integrity rules for Silver."""
+    def get_customer_rules():
+        """Rules for Customer master data."""
         return {
-            "non_null_tx_id": "tx_id IS NOT NULL",
-            "positive_amount": "tx_amount > 0",
-            "valid_currency": "currency IN ('NZD', 'AUD', 'USD', 'GBP')",
-            "recent_timestamp": "tx_timestamp > '2020-01-01'"
-        }
-
-    @staticmethod
-    def get_gold_business_rules():
-        """Business-level consistency for the Star Schema."""
-        return {
-            "valid_customer_link": "customer_id IS NOT NULL",
-            "assigned_region": "region IS NOT NULL"
+            "valid_email": "customer_email LIKE '%@%.%'",
+            "nz_phone_format": "phone_number RLIKE '^(\\+64|0)[2-9][0-9]{7,9}$'"
         }

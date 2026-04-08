@@ -1,49 +1,41 @@
-# src/transformation/silver_transformer.py
-from pyspark.sql import SparkSession
+# src/transformations/silver_transformer.py
+from pyspark.sql import DataFrame
 import pyspark.sql.functions as F
-from src.transformation.quality_rules import NexusQualityRules
+from src.sql.transformations.quality_rules import QualityRules
 
 class SilverTransformer:
-    def __init__(self, spark: SparkSession, catalog: str = "nff_catalog"):
+    """
+    Handles cleaning and normalization for the Silver layer.
+    Focuses on NZ region standardization and data integrity.
+    """
+    def __init__(self, spark):
         self.spark = spark
-        self.catalog = catalog
 
-    def transform_transactions(self):
+    def clean_transactions(self, df: DataFrame) -> DataFrame:
         """
-        Cleanses Bronze transactions, hashes PII, and handles rescued data.
+        Standardizes raw transactions:
+        1. Casts types (Amount to Double, Time to Timestamp)
+        2. Normalizes Region names (e.g., 'akl' -> 'AUCKLAND')
+        3. Adds a 'is_valid' flag based on QualityRules
         """
-        rules = NexusQualityRules.get_silver_transaction_rules()
+        # Get our centralized rules
+        rules = QualityRules.get_transaction_rules()
         
-        # 1. Read from Bronze
-        df_bronze = self.spark.table(f"{self.catalog".bronze.transactions")
+        # Build a consolidated quality check expression
+        # This creates a boolean flag: True if ALL rules pass
+        quality_expr = " AND ".join([f"({rule})" for rule in rules.values()])
 
-        # 2. Apply Transformation & PII Hashing
-        # We hash the customer_id to allow joins without exposing the raw ID 
-        # to developers who don't have PII access.
-        df_silver = df_bronze.select(
-            F.col("tx_id").cast("string"),
-            F.sha2(F.col("customer_id"), 256).alias("customer_hash"),
-            F.col("amount").cast("double").alias("tx_amount"),
-            F.col("currency").upper().alias("currency"),
-            F.col("tx_time").cast("timestamp").alias("tx_timestamp"),
-            F.col("region").cast("string"),
-            # Audit metadata
-            F.col("_ingestion_timestamp"),
-            F.current_timestamp().alias("_processing_timestamp")
-        ).filter(rules["positive_amount"]) # Apply quality rule from P6 library
-
-        # 3. Handle 'Rescued' records
-        # If _rescued_data is populated, we route it to a side-table for investigation
-        df_errors = df_bronze.filter("_rescued_data IS NOT NULL")
-        if df_errors.count() > 0:
-            df_errors.write.mode("append").saveAsTable(f"{self.catalog}.governance.quarantine_tx")
-
-        # 4. Upsert into Silver (Merge to handle duplicates)
-        df_silver.createOrReplaceTempView("v_temp_silver")
-        self.spark.sql(f"""
-            MERGE INTO {self.catalog}.silver.transactions AS target
-            USING v_temp_silver AS source
-            ON target.tx_id = source.tx_id
-            WHEN MATCHED THEN UPDATE SET *
-            WHEN NOT MATCHED THEN INSERT *
-        """)
+        return (
+            df.select(
+                F.col("tx_id").cast("string"),
+                F.col("customer_id").cast("string"),
+                F.col("amount").cast("double"),
+                # Normalize Region for our Governance Manager
+                F.upper(F.trim(F.col("region"))).alias("region"),
+                # Standardize to NZ Time (UTC+12/13)
+                F.to_timestamp(F.col("tx_time")).alias("tx_time"),
+                F.col("_source_file")
+            )
+            .withColumn("is_valid", F.expr(quality_expr))
+            .dropDuplicates(["tx_id"]) # Lead Standard: Never allow duplicate IDs in Silver
+        )
