@@ -1,8 +1,7 @@
 # src/transformations/silver_transformer.py
 from pyspark.sql import DataFrame
 import pyspark.sql.functions as F
-from src.sql.transformations.quality_rules import QualityRules
-
+from .quality_rules import QualityRules
 class SilverTransformer:
     """
     Handles cleaning and normalization for the Silver layer.

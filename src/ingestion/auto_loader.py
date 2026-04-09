@@ -18,6 +18,11 @@ class NexusAutoLoader:
         """
         # 1. Configure Storage Access using our Secrets Manager
         creds = self.secrets.get_adls_config()
+        account = creds.get('storage_account', 'nexusstorage')
+        endpoint = creds.get('endpoint', 'dfs.core.windows.net')
+        container = self.target_table.split('.')[1] # e.g., 'bronze'
+        dynamic_source_path = f"abfss://{container}@{account}.{endpoint}/"
+
         self.spark.conf.set(f"fs.azure.account.auth.type", "OAuth")
         self.spark.conf.set(f"fs.azure.account.oauth.provider.type", "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider")
         self.spark.conf.set(f"fs.azure.account.oauth2.client.id", creds['client_id'])
@@ -28,9 +33,9 @@ class NexusAutoLoader:
         df_stream = (self.spark.readStream
             .format("cloudFiles")
             .option("cloudFiles.format", "json")
-            .option("cloudFiles.schemaLocation", f"dbfs:/nexus/checkpoints/{self.target_table}/schema")
+            .option("cloudFiles.schemaLocation", f"dbfs:/{account}/checkpoints/{self.target_table}/schema")
             .option("cloudFiles.inferColumnTypes", "true")
-            .load(self.source_path))
+            .load(self.source_path or dynamic_source_path))
 
         # 3. Write via Micro-Batch (Integrates with TableFactory)
         def process_batch(batch_df, batch_id):

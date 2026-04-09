@@ -41,7 +41,7 @@ class NexusDataGenerator:
             }
         }
 
-    def write_to_landing(self, file_path, num_records=100, corruption_rate=0.05):
+    def write_to_landing(self, file_path, num_records=5, corruption_rate=0.05):
         """Writes a batch of JSON records to the ADLS Landing Zone."""
         records = []
         for _ in range(num_records):
