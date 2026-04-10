@@ -1,34 +1,42 @@
-# src/common/spark_session.py
-from pyspark.sql import SparkSession
 import os
+from pyspark.sql import SparkSession
+from delta import configure_spark_with_delta_pip
 
-class NexusSparkFactory:
-    """
-    Centralized Factory for NexusFlow Spark Sessions.
-    Handles environment-specific configs for the NZ region.
-    """
+class NexusSpark:
     _instance = None
 
-    @staticmethod
-    def get_session(app_name: str = "NexusFlow-Task"):
-        """Returns the optimized Spark session."""
-        if NexusSparkFactory._instance is None:
-            # Determine environment
-            env = os.getenv("NEXUS_ENV", "dev")
+    def __new__(cls, run_mode="local"):
+        if cls._instance is None:
+            # 1. Normalize the run_mode and detect environment
+            is_databricks = run_mode == "databricks" or "DATABRICKS_RUNTIME_VERSION" in os.environ
+            app_name = f"NexusFlow-{'Databricks' if is_databricks else 'Local'}-Runner"
             
             builder = SparkSession.builder.appName(app_name)
             
-            # 1. Apply Global Optimizations (2026 Standards)
-            builder.config("spark.databricks.delta.optimizeWrite.enabled", "true")
-            builder.config("spark.databricks.delta.autoCompact.enabled", "true")
-            
-            # 2. Apply Environment-Specific Configs
-            if env == "prod":
-                builder.config("spark.databricks.io.cache.enabled", "true") # Faster IO for Gold layer
-            
-            NexusSparkFactory._instance = builder.get_OrCreate()
-            
-        return NexusSparkFactory._instance
+            if is_databricks:
+                # --- DATABRICKS OPTIMIZATIONS (2026 Standards) ---
+                builder.config("spark.databricks.delta.schema.autoMerge.enabled", "true")
+                builder.config("spark.databricks.delta.deletionVectors.enabled", "true")
+                builder.config("spark.databricks.delta.optimizeWrite.enabled", "true")
+                cls._instance = builder.getOrCreate()
+            else:
+                # --- LOCAL DELTA OPTIMIZATIONS ---
+                # Create a local temp dir that isn't on the C: root
+                local_temp = os.path.abspath("./spark_temp")
+                os.makedirs(local_temp, exist_ok=True)
 
-# Alias for ease of use in notebooks
-NexusSpark = NexusSparkFactory.get_session
+                builder.master("local[*]") \
+                       .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+                       .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+                       .config("spark.sql.warehouse.dir", os.path.abspath("./spark_warehouse")) \
+                       .config("spark.local.dir", local_temp) \
+                       .config("spark.sql.streaming.schemaInference", "true") \
+                       .config("spark.ui.port", "4050")
+                
+                # Use the Delta-PIP wrapper for local Spark
+                cls._instance = configure_spark_with_delta_pip(builder).getOrCreate()
+                
+                # Silence the ShutdownHookManager and log noise
+                cls._instance.sparkContext.setLogLevel("ERROR")
+                
+        return cls._instance

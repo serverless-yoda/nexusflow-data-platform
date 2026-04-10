@@ -1,4 +1,4 @@
-# src/transformations/gold_transformer.py
+# src/transformation/gold_transformer.py
 from pyspark.sql import DataFrame
 import pyspark.sql.functions as F
 
@@ -25,7 +25,7 @@ class GoldTransformer:
             )
             .withColumn("avg_transaction_value", 
                         F.col("daily_revenue") / F.col("transaction_count"))
-            # Lead Architect Tip: Flatten the window for easier dashboarding
+            # Flatten the window for easier dashboarding
             .withColumn("report_date", F.col("window.start"))
             .drop("window")
         )

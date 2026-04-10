@@ -1,4 +1,4 @@
-# src/sql/transformations/quality_rules.py
+# src/sql/transformation/quality_rules.py
 
 class QualityRules:
     """
