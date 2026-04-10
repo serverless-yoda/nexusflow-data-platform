@@ -10,6 +10,25 @@ class GovernanceManager:
         self.spark = spark
         self.catalog = catalog
 
+    def deploy_security_policies(self):
+        """Reads SQL scripts and injects groups from the manifest."""
+        settings = self.config['settings']
+        
+        # Path to your RLS script
+        sql_path = "src/sql/governance/row_level_security.sql"
+        
+        with open(sql_path, "r") as f:
+            template = f.read()
+
+        # Inject the Catalog and Admin Group
+        final_sql = template.replace("${catalog}", settings['catalog']) \
+                            .replace("${admin_group}", settings['admin_group'])
+        
+        print("Applying Row Level Security...")
+        for statement in final_sql.split(";"):
+            if statement.strip():
+                self.spark.sql(statement)
+
     def register_security_functions(self):
         """
         Initializes the SQL UDFs used for filtering. 

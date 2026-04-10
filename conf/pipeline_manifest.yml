@@ -1,9 +1,25 @@
+# conf/pipeline_manifest.yml
 settings:
   run_mode: "local"
   local_base_path: "./data"
   seed_data: true
   number_of_records: 20
+  catalog: "nff_catalog"
+  admin_group: "nff_admin"
+  steward_group: "nff_data_stewards"
+  storage_root: "abfss://data@nexusstorage.dfs.core.windows.net/nexusflow"
 
+layers:
+  bronze:
+    schema: "bronze_raw"
+    path: "bronze"
+  silver:
+    schema: "silver_refined"
+    path: "silver"
+  gold:
+    schema: "gold_analytics"
+    path: "gold"
+    
 tables:
   # --- SILVER LAYER (Streaming) ---
   - name: "transactions_silver"

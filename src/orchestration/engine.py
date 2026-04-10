@@ -7,16 +7,55 @@ from src.transformation.silver_transformer import SilverTransformer
 from src.transformation.gold_transformer import GoldTransformer
 
 class NexusEngine:
-    def __init__(self, run_mode="local", local_root=""):
+    def __init__(self, config, run_mode="local", local_root=""):
+        self.config = config # Store the manifest config
         self.run_mode = run_mode
         self.local_root = local_root
-        self.spark = NexusSpark(run_mode)
+        self.spark = NexusSpark(run_mode).get_session()
+        
 
     def resolve_path(self, path):
         """Prepends local root if running in local mode."""
         if self.run_mode == "local" and not path.startswith("abfss"):
             return os.path.join(self.local_root, path.lstrip("/"))
         return path
+    
+    def provision_layer(self, layer_name: str):
+        """
+        Reads a DDL file and injects manifest values.
+        Example: layer_name = 'bronze'
+        """
+        # Check if we are in Databricks before attempting UC-specific DDL
+        if self.run_mode == "local":
+            print(f"Local Mode: Skipping DDL provisioning for {layer_name}.")
+            return
+    
+        # 1. Get values from manifest
+        settings = self.config['settings']
+        layer_cfg = self.config['layers'][layer_name]
+        
+        # 2. Map variables for replacement
+        mapping = {
+            "${catalog}": settings['catalog'],
+            "${storage_root}": settings['storage_root'],
+            f"${{{layer_name}_schema}}": layer_cfg['schema'],
+            f"${{{layer_name}_path}}": layer_cfg['path']
+        }
+
+        # 3. Read and Replace
+        sql_path = f"src/sql/ddl/create_{layer_name}_txt.sql"
+        with open(sql_path, "r") as f:
+            sql_template = f.read()
+        
+        for placeholder, value in mapping.items():
+            sql_template = sql_template.replace(placeholder, value)
+
+        # 4. Execute in Databricks
+        print(f"🏗️  Provisioning {layer_name} layer in {settings['catalog']}...")
+        for statement in sql_template.split(";"):
+            if statement.strip():
+                self.spark.sql(statement)
+
 
     def resolve_table_name(self, full_table_name: str) -> str:
         """
@@ -142,46 +181,3 @@ class NexusEngine:
             self.spark.sql(f"OPTIMIZE {resolved_name}")
 
             
-    def _run_pipeline(self, table_cfg):
-        source = self.resolve_path(table_cfg['source_path'])
-        # Checkpoint location also needs to be environment-aware
-        checkpoint_base = self.resolve_path(f"/checkpoints/{table_cfg['name']}")
-        
-        # 1. Optimized Auto Loader Ingestion
-        raw_stream = (self.spark.readStream
-            .format("cloudFiles")
-            .option("cloudFiles.format", "json")
-            .option("cloudFiles.schemaLocation", f"{checkpoint_base}/schema")
-            .load(table_cfg['source_path'])
-            .withColumn("_ingestion_timestamp", F.current_timestamp())
-            .withColumn("tx_date", F.to_date("tx_time"))
-        )
-
-        # 2. Dynamic Rule Application
-        rules = getattr(QualityRules, table_cfg['rules_method'])()
-        quality_expr = " AND ".join([f"({sql})" for sql in rules.values()])
-        processed_df = raw_stream.withColumn("is_valid", F.expr(quality_expr))
-
-        # 3. Micro-Batch Sink (Quarantine Pattern)
-        def micro_batch_sink(batch_df, batch_id):
-            if batch_df.isEmpty(): return
-            
-            # Split Good vs Bad in one pass
-            batch_df.filter("is_valid = true").drop("is_valid") \
-                .write.format("delta").mode("append").saveAsTable(table_cfg['target_silver'])
-            
-            batch_df.filter("is_valid = false") \
-                .write.format("delta").mode("append").saveAsTable(table_cfg['target_quarantine'])
-
-        query = (processed_df.writeStream
-            .foreachBatch(micro_batch_sink)
-            .option("checkpointLocation", f"{checkpoint_base}/data")
-            .trigger(availableNow=True)
-            .start())
-        
-        query.awaitTermination()
-
-        # 4. Storage Optimization (Liquid Clustering)
-        target = table_cfg['target_silver']
-        self.spark.sql(f"ALTER TABLE {target} CLUSTER BY ({', '.join(table_cfg['cluster_by'])})")
-        self.spark.sql(f"OPTIMIZE {target}")

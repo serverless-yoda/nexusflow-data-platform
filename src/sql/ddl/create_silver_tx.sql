@@ -1,34 +1,15 @@
--- src/sql/ddl/create_silver_txt.sql
+-- src/sql/ddl/create_silver_tx.sql
 
--- 1. Create the Schema if it doesn't exist
-CREATE SCHEMA IF NOT EXISTS nff_catalog.silver
-COMMENT 'Refined and cleaned fintech transactions for regional analysis';
+-- Use placeholders for Catalog, Schema, and Location
+CREATE SCHEMA IF NOT EXISTS ${catalog}.${silver_schema}
+MANAGED LOCATION '${storage_root}/${silver_path}';
 
--- 2. Define the Silver Transactions Table
-CREATE TABLE IF NOT EXISTS nff_catalog.silver.transactions (
-    -- Business Keys
+CREATE TABLE IF NOT EXISTS ${catalog}.${silver_schema}.transactions (
     tx_id STRING NOT NULL,
-    customer_id STRING NOT NULL,
-    
-    -- Cleaned & Typed Measures
-    amount DOUBLE COMMENT 'Cleaned transaction amount in NZD',
-    currency STRING,
+    amount DOUBLE,
+    region STRING,
     tx_time TIMESTAMP,
-    tx_date DATE GENERATED ALWAYS AS (CAST(tx_time AS DATE)),
-    
-    -- Governance Attributes
-    region STRING COMMENT 'Standardized NZ Region (e.g., AUCKLAND, WELLINGTON)',
-    merchant_name STRING,
-    
-    -- Audit Metadata
-    _bronze_source_file STRING,
-    _last_modified_time TIMESTAMP DEFAULT current_timestamp()
+    tx_date DATE GENERATED ALWAYS AS (CAST(tx_time AS DATE))
 )
 USING DELTA
--- 2026 Standard: Cluster by columns frequently used in WHERE clauses
-CLUSTER BY (region, tx_date)
-TBLPROPERTIES (
-    'delta.enableChangeDataFeed' = 'true',
-    'delta.minReaderVersion' = '3',
-    'delta.minWriterVersion' = '7'
-);
+CLUSTER BY (region, tx_date);
