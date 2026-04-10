@@ -211,3 +211,4 @@ notes/
 azurecli/
 spark_warehouse/
 spark_temp/
+conf/secret_map.yaml
