@@ -220,5 +220,7 @@ infra/dev/terraform.tfstate.backup
 infra/prod/terraform.tfstate.backup
 infra/dev/.terraform/
 infra/prod/.terraform/
+infra/dev/.terraform.lock.hcl
+infra/prod/.terraform.lock.hcl
 
 

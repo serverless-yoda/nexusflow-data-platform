@@ -1,3 +1,8 @@
+# This creates a 4-character random hex string (e.g., "a1b2")
+resource "random_id" "suffix" {
+  byte_length = 2
+}
+
 # 1. Create a Resource Group (The 'Project Folder')
 resource "azurerm_resource_group" "nexus_rg" {
   # This will become 'rg-nexusflow-dev' or 'rg-nexusflow-prod'
@@ -8,7 +13,7 @@ resource "azurerm_resource_group" "nexus_rg" {
 resource "azurerm_storage_account" "nexus_storage" {
   # Storage names can't have dashes, so we just squash it together
   # Result: 'nffstoragedev'
-  name                     = "nexusflowstorage${var.env}"
+  name                     = "nexus${random_id.suffix.hex}storage${var.env}"
   resource_group_name      = azurerm_resource_group.nexus_rg.name
   location                 = azurerm_resource_group.nexus_rg.location
   account_tier             = "Standard"
@@ -25,7 +30,7 @@ resource "azurerm_storage_container" "data_container" {
 
 # 4. The Digital Safe (Key Vault) from your secret_map.yml
 resource "azurerm_key_vault" "nexus_kv" {
-  name                = "nexus-flow-kv-${var.env}"
+  name                = "nexus-flow-${random_id.suffix.hex}-kv-${var.env}"
   resource_group_name = azurerm_resource_group.nexus_rg.name
   location            = azurerm_resource_group.nexus_rg.location
   tenant_id           = var.azure_tenant_id
@@ -36,7 +41,7 @@ resource "azurerm_key_vault" "nexus_kv" {
 
 # Create the Databricks Workspace (The Clubhouse)
 resource "azurerm_databricks_workspace" "nexus_workspace" {
-  name                = "dbx-nexusflow-${var.env}"
+  name                = "dbx-nexus-${random_id.suffix.hex}-${var.env}"
   resource_group_name = azurerm_resource_group.nexus_rg.name
   location            = azurerm_resource_group.nexus_rg.location
   sku                 = "premium" # Premium is needed for Unity Catalog!
@@ -48,7 +53,7 @@ resource "azurerm_databricks_workspace" "nexus_workspace" {
 
 # The 'Keycard' for Databricks
 resource "azurerm_databricks_access_connector" "unity_connector" {
-  name                = "ext-access-connector-${var.env}"
+  name                = "ext-access-connector-${random_id.suffix.hex}-${var.env}"
   resource_group_name = azurerm_resource_group.nexus_rg.name
   location            = azurerm_resource_group.nexus_rg.location
 

@@ -1,7 +1,7 @@
 # 1. Register the 'Keycard' (Storage Credential)
 # This tells Databricks to use the Managed Identity we built in main.tf
 resource "databricks_storage_credential" "external" {
-  name = "nexus-storage-credential"
+  name = "nexus-storage-credential-${random_id.suffix.hex}"
   azure_managed_identity {
     access_connector_id = azurerm_databricks_access_connector.unity_connector.id
   }
@@ -10,7 +10,7 @@ resource "databricks_storage_credential" "external" {
 # 2. Register the 'Parking Space' (External Location)
 # This validates that Databricks is allowed to talk to your specific Azure Container
 resource "databricks_external_location" "this" {
-  name            = "nexus_external_location"
+  name            = "nexus_external_location-${random_id.suffix.hex}"
   url             = "abfss://${azurerm_storage_container.data_container.name}@${azurerm_storage_account.nexus_storage.name}.dfs.core.windows.net/"
   credential_name = databricks_storage_credential.external.name
   comment         = "Storage for NexusFlow Medallion layers"
