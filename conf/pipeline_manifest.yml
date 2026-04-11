@@ -7,7 +7,7 @@ settings:
   catalog: "nff_catalog"
   admin_group: "nff_admin"
   steward_group: "nff_data_stewards"
-  storage_root: "abfss://data@nexusstorage.dfs.core.windows.net/nexusflow"
+  storage_root: "abfss://data@nexusflowstorage.dfs.core.windows.net/nexusflow"
 
 layers:
   bronze:
