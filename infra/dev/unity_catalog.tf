@@ -18,7 +18,7 @@ resource "databricks_external_location" "this" {
 
 # 3. Create the Catalog (The 'Library')
 resource "databricks_catalog" "nff_catalog" {
-  name           = "nff_catalog_${var.env}" 
+  name           = "nff_catalog_${random_id.suffix.hex}_${var.env}" 
   comment        = "Main catalog for NexusFlow Medallion Architecture"
   
   # Now that the External Location exists, this URL will be accepted!
