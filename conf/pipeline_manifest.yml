@@ -21,15 +21,24 @@ layers:
     path: "gold"
 
 tables:
+  # --- BRONZE LAYER (Streaming) ---
+  - name: "transactions_bronze"
+    type: "bronze"
+    source_path: "/landing/transactions/"
+    check_point: "/checkpoints/bronze/"
+    target_table: "nff_catalog_830a_dev.bronze_raw.transactions" # Catalog entry
+    cluster_by: ["_ingested_at"]
+
   # --- SILVER LAYER (Streaming) ---
   - name: "transactions_silver"
     type: "silver"
-    source_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/landing/transactions/"
-    target_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/silver/transactions/"
-    check_point: "abfss://data@xxxxxxxdev.dfs.core.windows.net/checkpoints"
     
+    source_table: "nff_catalog_830a_dev.bronze_raw.transactions"
+    check_point: "/checkpoints/transactions/"
+    
+    target_path: "/silver/transactions/"
     target_table: "nff_catalog_830a_dev.silver_refined.transactions" # Catalog entry
-    target_quarantine_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/quarantine/transactions/"
+    target_quarantine_path: "/quarantine/transactions/"
     target_quarantine: "nff_catalog_830a_dev.quarantine.transactions"
     rules_method: "get_transaction_rules"
     cluster_by: ["region"]
@@ -38,6 +47,6 @@ tables:
   - name: "regional_kpis_gold"
     type: "gold"
     source_table: "nff_catalog_830a_dev.silver_refined.transactions"
-    target_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/gold/regional_kpis/"            # Physical folder
+    target_path: "/gold/regional_kpis/"            # Physical folder
     target_table: "nff_catalog_830a_dev.gold_analytics.regional_kpis"   # Catalog entry
     cluster_by: ["region"]

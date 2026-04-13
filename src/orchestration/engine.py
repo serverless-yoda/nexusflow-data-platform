@@ -56,18 +56,12 @@ class NexusEngine:
             return full_table_name
         return full_table_name
 
-    def run_silver(self, table_cfg):
-        #print(table_cfg)
-        source = self.resolve_path(table_cfg['source_path'])
-        _checkpoint = self.resolve_path(f"Volumes/checkpoints/{table_cfg['name']}")
-        checkpoint =  self.resolve_path(f"{table_cfg['check_point']}")
-        #print(checkpoint)
+    def run_bronze(self, table_cfg, storage_root: str):
+        source        = f"{storage_root}/" + self.resolve_path(table_cfg['source_path'])
+        checkpoint    = f"{storage_root}/" + self.resolve_path(f"{table_cfg['check_point']}")
+        target_table  = self.resolve_table_name(table_cfg['target_table'])
         
-        target_table = self.resolve_table_name(table_cfg['target_table'])
-        quarantine_table = self.resolve_table_name(table_cfg['target_quarantine'])
         
-        transformer = SilverTransformer(self.spark)
-
         if self.run_mode == "local":
             parts = target_table.split(".")
             if len(parts) > 1:
@@ -85,22 +79,71 @@ class NexusEngine:
                 .option("cloudFiles.schemaLocation", f"{checkpoint}/schema")
                 .load(source))
 
+            bronze_df = (raw_stream
+                .withColumn("_ingested_at", F.current_timestamp())
+                .withColumn("_source_file", F.input_file_name()))
+
+            query = (bronze_df.writeStream
+                .format("delta")
+                .outputMode("append")
+                .option("checkpointLocation", checkpoint)
+                .trigger(availableNow=True)
+                .toTable(target_table))
+
+            query.awaitTermination()
+            self._apply_storage_optimization(target_table, table_cfg['cluster_by'])
+            print(f"✅ Successfully moved data to {target_table}")
+        
+
+    def run_silver(self, table_cfg, storage_root: str):
+        # 1. Resolve Table Names and Checkpoints
+        # The source is now a Delta Table, not a file path
+        source_table = f"{table_cfg['source_table']}"
+        
+        # Ensure checkpoint is on ABFSS/DBFS (not Volumes) to avoid previous error
+        checkpoint = f"{storage_root}/" + self.resolve_path(f"{table_cfg['check_point']}")
+        
+        target_table = self.resolve_table_name(table_cfg['target_table'])
+        quarantine_table = self.resolve_table_name(table_cfg['target_quarantine'])
+        quarantine_path = f"{storage_root}/" + self.resolve_path(table_cfg.get('target_quarantine_path', f"/quarantine/{table_cfg['name']}"))
+        target_path =     f"{storage_root}/" + self.resolve_path(table_cfg['target_path'])
+
+
+        # Registry-based transformer (using the pattern we discussed)
+        transformer = SilverTransformer(self.spark)
+
+        # 2. STREAM FROM BRONZE DELTA TABLE
+        raw_stream = (self.spark.readStream
+            .format("delta")
+            .option("ignoreChanges", "true") # Allows stream to continue if you optimize Bronze
+            .table(source_table))
+
         def micro_batch_sink(batch_df, batch_id):
             if batch_df.isEmpty(): return
             
+            # Apply transformation logic (Silver cleaning)
             processed_df = transformer.clean_transactions(batch_df, table_cfg['rules_method'])
-            
-            target_path = self.resolve_path(table_cfg['target_path'])
-            quarantine_path = self.resolve_path(table_cfg.get('target_quarantine_path', f"/quarantine/{table_cfg['name']}"))
 
-            (processed_df.filter("is_valid = true").drop("is_valid") 
-                .write.format("delta").mode("append") 
-                .option("path", target_path).saveAsTable(target_table))
+            # Write Valid Records
+            (
+                processed_df
+                    .filter("is_valid = true")
+                    .drop("is_valid") 
+                    .write.format("delta")
+                    .mode("append") 
+                    .option("path", target_path)
+                    .saveAsTable(target_table))
                 
-            # (processed_df.filter("is_valid = false") 
-            #     .write.format("delta").mode("append") 
-            #     .option("path", quarantine_path).saveAsTable(quarantine_table))
+            # Write Invalid Records (Phase 11 Quarantine)
+            (
+                processed_df
+                    .filter("is_valid = false") 
+                    .write.format("delta")
+                    .mode("append") 
+                    .option("path", quarantine_path)
+                    .saveAsTable(quarantine_table))
 
+        # 3. Start the Stream
         query = (raw_stream.writeStream
             .foreachBatch(micro_batch_sink)
             .option("checkpointLocation", checkpoint)
@@ -108,14 +151,17 @@ class NexusEngine:
             .start())
         
         query.awaitTermination()
+        
+        # 4. Apply Liquid Clustering to Silver (Using your config)
         self._apply_storage_optimization(target_table, table_cfg['cluster_by'])
 
-    def run_gold(self, table_cfg):
+    
+    def run_gold(self, table_cfg, storage_root: str):
         print(f"🏆 Processing Gold Layer: {table_cfg['name']}")
         
         source_table = self.resolve_table_name(table_cfg['source_table'])
         target_table = self.resolve_table_name(table_cfg['target_table'])
-        target_path = self.resolve_path(table_cfg['target_path'])
+        target_path = f"{storage_root}/" + self.resolve_path(table_cfg['target_path'])
         target_table = self.resolve_table_name(table_cfg['target_table'])
 
         silver_df = self.spark.read.table(source_table)

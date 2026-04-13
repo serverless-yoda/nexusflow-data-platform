@@ -10,7 +10,7 @@ from src.common.data_generator import NexusDataGenerator
 # Define the paths to clear
 paths_to_reset = [
     "./data/silver",
-    "./data/gold",
+    "./data/gold",  
     "./data/quarantine",
     "./checkpoints"  # CRITICAL: Always clear checkpoints when clearing data!
 ]
@@ -30,6 +30,8 @@ def main():
     engine = NexusEngine(config=config,run_mode=run_mode, local_root=local_root)
     generator = NexusDataGenerator(engine.spark)
 
+    storage_root = config['settings'].get('storage_root', 'dbfs:/nexusflow')
+
     for table in config['tables']:
         # --- SEED DATA FOR TESTING ---
         if config['settings'].get('seed_data', False) and 'source_path' in table:
@@ -47,10 +49,15 @@ def main():
         # --- RUN PRODUCTION PIPELINE ---
         if table['type'] == "silver":
             print(f"🥈 Starting Silver Pipeline: {table['name']}")
-            engine.run_silver(table)
+            engine.run_silver(table, storage_root=storage_root)
         elif table['type'] == "gold":
             print(f"🏆 Starting Gold Pipeline: {table['name']}")
-            engine.run_gold(table)
+            engine.run_gold(table, storage_root=storage_root)
+        else:
+            print(f"🥈 Starting Bronze Pipeline: {table['name']}")
+            engine.run_bronze(table, storage_root=storage_root)
+
+            
             
     print("🏁 NexusFlow Orchestration Complete.")
 

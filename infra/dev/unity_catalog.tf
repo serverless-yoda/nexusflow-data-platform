@@ -43,6 +43,11 @@ resource "databricks_schema" "gold" {
   name         = "gold_analytics"
 }
 
+resource "databricks_schema" "quarantine" {
+  catalog_name = databricks_catalog.nff_catalog.id
+  name         = "quarantine"
+}
+
 # 5. Create the Secret Scope
 resource "databricks_secret_scope" "nexus_scope" {
   name = "nexusflow-scope"
