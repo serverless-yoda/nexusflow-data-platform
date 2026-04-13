@@ -7,7 +7,7 @@ settings:
   catalog: "nff_catalog_830a_dev"
   admin_group: "nff_admin"
   steward_group: "nff_data_stewards"
-  storage_root: "abfss://data@nexus830astoragedev.dfs.core.windows.net/nexusflow"
+  storage_root: "abfss://data@xxxxxxxdev.dfs.core.windows.net/nexusflow"
 
 layers:
   bronze:
@@ -24,12 +24,12 @@ tables:
   # --- SILVER LAYER (Streaming) ---
   - name: "transactions_silver"
     type: "silver"
-    source_path: "abfss://data@nexus830astoragedev.dfs.core.windows.net/landing/transactions/"
-    target_path: "abfss://data@nexus830astoragedev.dfs.core.windows.net/silver/transactions/"
-    check_point: "abfss://data@nexus830astoragedev.dfs.core.windows.net/checkpoints"
+    source_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/landing/transactions/"
+    target_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/silver/transactions/"
+    check_point: "abfss://data@xxxxxxxdev.dfs.core.windows.net/checkpoints"
     
     target_table: "nff_catalog_830a_dev.silver_refined.transactions" # Catalog entry
-    target_quarantine_path: "abfss://data@nexus830astoragedev.dfs.core.windows.net/quarantine/transactions/"
+    target_quarantine_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/quarantine/transactions/"
     target_quarantine: "nff_catalog_830a_dev.quarantine.transactions"
     rules_method: "get_transaction_rules"
     cluster_by: ["region"]
@@ -38,6 +38,6 @@ tables:
   - name: "regional_kpis_gold"
     type: "gold"
     source_table: "nff_catalog_830a_dev.silver_refined.transactions"
-    target_path: "abfss://data@nexus830astoragedev.dfs.core.windows.net/gold/regional_kpis/"            # Physical folder
+    target_path: "abfss://data@xxxxxxxdev.dfs.core.windows.net/gold/regional_kpis/"            # Physical folder
     target_table: "nff_catalog_830a_dev.gold_analytics.regional_kpis"   # Catalog entry
     cluster_by: ["region"]
