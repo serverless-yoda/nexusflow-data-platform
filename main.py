@@ -14,12 +14,6 @@ paths_to_reset = [
     "./data/quarantine",
     "./checkpoints"  # CRITICAL: Always clear checkpoints when clearing data!
 ]
-
-for path in paths_to_reset:
-    if os.path.exists(path):
-        print(f"🧹 Clearing {path}...")
-        shutil.rmtree(path)
-
 def main():
     with open("conf/pipeline_manifest.yml", "r") as f:
         config = yaml.safe_load(f)
@@ -27,7 +21,13 @@ def main():
     run_mode = os.getenv("NEXUS_RUN_MODE", config['settings'].get('run_mode', 'local'))
     local_root = os.path.abspath(config['settings'].get('local_base_path', './data'))
     
-    engine = NexusEngine(run_mode=run_mode, local_root=local_root)
+    if run_mode == "local":
+        for path in paths_to_reset:
+            if os.path.exists(path):
+                print(f"🧹 Clearing {path}...")
+                shutil.rmtree(path)
+                
+    engine = NexusEngine(config=config,run_mode=run_mode, local_root=local_root)
     generator = NexusDataGenerator(engine.spark)
 
     for table in config['tables']:
@@ -41,7 +41,7 @@ def main():
             file_name = f"batch_{timestamp}.json"
             
             target = os.path.join(landing_path, file_name) if run_mode == "local" else landing_path
-            
+            #print(landing_path)
             generator.write_to_landing(target, num_records=number_of_records, run_mode=run_mode)
 
         # --- RUN PRODUCTION PIPELINE ---

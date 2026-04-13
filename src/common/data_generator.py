@@ -42,5 +42,6 @@ class NexusDataGenerator:
         else:
             # In Databricks, use Spark to write to ABFSS/Unity Catalog paths
             df = self.spark.createDataFrame(data)
-            df.coalesce(1).write.mode("append").json(target_path)
+            #df.coalesce(1).write.mode("append").json(target_path)
+            df.coalesce(1).write.mode("append").format("json").save(target_path)
             print(f"☁️ [DATABRICKS] Seeded {num_records} records to {target_path}")
