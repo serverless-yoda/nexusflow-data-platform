@@ -42,8 +42,8 @@ def main():
             timestamp = datetime.now().strftime('%H%M%S_%f')
             file_name = f"batch_{timestamp}.json"
             
-            target = os.path.join(landing_path, file_name) if run_mode == "local" else landing_path
-            #print(landing_path)
+            target = os.path.join(landing_path, file_name) if run_mode == "local" else f"{storage_root}" + landing_path
+            print(target)
             generator.write_to_landing(target, num_records=number_of_records, run_mode=run_mode)
 
         # --- RUN PRODUCTION PIPELINE ---

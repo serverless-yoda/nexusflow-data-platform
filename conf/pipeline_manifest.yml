@@ -4,7 +4,7 @@ settings:
   local_base_path: "./data"
   seed_data: false
   number_of_records: 20
-  catalog: "nff_catalog_830a_dev"
+  catalog: "nff_catalog_cd21_dev"
   admin_group: "nff_admin"
   steward_group: "nff_data_stewards"
   storage_root: "abfss://data@nexuscd21storagedev.dfs.core.windows.net/nexusflow"
@@ -48,5 +48,5 @@ tables:
     type: "gold"
     source_table: "nff_catalog_cd21_dev.silver_refined.transactions"
     target_path: "/gold/regional_kpis/"            # Physical folder
-    target_table: "nff_catalog_830a_dev.gold_analytics.regional_kpis"   # Catalog entry
+    target_table: "nff_catalog_cd21_dev.gold_analytics.regional_kpis"   # Catalog entry
     cluster_by: ["region"]
