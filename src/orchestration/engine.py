@@ -48,18 +48,19 @@ class NexusEngine:
             if statement.strip():
                 self.spark.sql(statement)
 
-    def resolve_table_name(self, full_table_name: str) -> str:
+
+    def resolve_table_name(self, full_table_name: str, catalog: str) -> str:
         if self.run_mode == "local":
             parts = full_table_name.split(".")
             if len(parts) >= 2:
                 return f"{parts[-2]}_{parts[-1]}"
             return full_table_name
-        return full_table_name
+        return full_table_name.format(catalog=catalog)
 
     def run_bronze(self, table_cfg, storage_root: str, catalog: str):
         source        = f"{storage_root}/" + self.resolve_path(table_cfg['source_path'])
         checkpoint    = f"{storage_root}/" + self.resolve_path(f"{table_cfg['check_point']}")
-        target_table  = self.resolve_table_name(table_cfg['target_table']).replace("REPLACECATALOG", catalog)   
+        target_table  = self.resolve_table_name(table_cfg['target_table'], catalog)
         
         
         if self.run_mode == "local":
@@ -91,20 +92,20 @@ class NexusEngine:
                 .toTable(target_table))
 
             query.awaitTermination()
-            self._apply_storage_optimization(target_table, table_cfg['cluster_by'])
+            self._apply_storage_optimization(target_table, table_cfg['cluster_by'], catalog)
             print(f"✅ Successfully moved data to {target_table}")
         
 
     def run_silver(self, table_cfg, storage_root: str, catalog: str):
         # 1. Resolve Table Names and Checkpoints
         # The source is now a Delta Table, not a file path
-        source_table = f"{table_cfg['source_table']}"
+        source_table = self.resolve_table_name(table_cfg['source_table'], catalog)
         
         # Ensure checkpoint is on ABFSS/DBFS (not Volumes) to avoid previous error
         checkpoint = f"{storage_root}/" + self.resolve_path(f"{table_cfg['check_point']}")
         
-        target_table = self.resolve_table_name(table_cfg['target_table']).replace("REPLACECATALOG", catalog)  
-        quarantine_table = self.resolve_table_name(table_cfg['target_quarantine']).replace("REPLACECATALOG", catalog)
+        target_table  = self.resolve_table_name(table_cfg['target_table'], catalog)
+        quarantine_table = self.resolve_table_name(table_cfg['target_quarantine'], catalog)
         quarantine_path = f"{storage_root}/" + self.resolve_path(table_cfg.get('target_quarantine_path', f"/quarantine/{table_cfg['name']}"))
         target_path =     f"{storage_root}/" + self.resolve_path(table_cfg['target_path'])
 
@@ -153,14 +154,14 @@ class NexusEngine:
         query.awaitTermination()
         
         # 4. Apply Liquid Clustering to Silver (Using your config)
-        self._apply_storage_optimization(target_table, table_cfg['cluster_by'])
+        self._apply_storage_optimization(target_table, table_cfg['cluster_by'], catalog)
 
     
     def run_gold(self, table_cfg, storage_root: str, catalog: str):
         print(f"🏆 Processing Gold Layer: {table_cfg['name']}")
         
-        source_table = self.resolve_table_name(table_cfg['source_table']).replace("REPLACECATALOG", catalog)  
-        target_table = self.resolve_table_name(table_cfg['target_table']).replace("REPLACECATALOG", catalog)
+        source_table = self.resolve_table_name(table_cfg['source_table'], catalog)  
+        target_table = self.resolve_table_name(table_cfg['target_table'], catalog)
         target_path = f"{storage_root}/" + self.resolve_path(table_cfg['target_path'])
 
         silver_df = self.spark.read.table(source_table)
@@ -173,10 +174,10 @@ class NexusEngine:
             .option("path", target_path) \
             .saveAsTable(target_table)
         
-        self._apply_storage_optimization(target_table, table_cfg['cluster_by'])
+        self._apply_storage_optimization(target_table, table_cfg['cluster_by'], catalog)
 
-    def _apply_storage_optimization(self, table_name, cluster_cols):
-        resolved_name = self.resolve_table_name(table_name)
+    def _apply_storage_optimization(self, table_name, cluster_cols, catalog):
+        resolved_name = self.resolve_table_name(table_name,catalog)
         cols = ", ".join(cluster_cols)
         
         if self.run_mode == "local":

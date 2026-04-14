@@ -10,21 +10,39 @@ class NexusDataGenerator:
         self.spark = spark
 
     def generate_mock_transactions(self, num_records=5):
-        """Generates a list of dictionaries simulating NZ transaction data."""
+        """Generates a list of dictionaries simulating valid and invalid NZ transaction data."""
         regions = ["AUCKLAND", "WELLINGTON", "CHRISTCHURCH", "HAMILTON"]
         data = []
         
         for i in range(num_records):
+            # 20% chance to generate "invalid" data for testing quarantine
+            is_invalid = random.random() < 0.20
+            
             tx_time = datetime.now() - timedelta(minutes=random.randint(0, 1000))
-            record = {
-                "tx_id": f"TXN-{random.randint(10000, 99999)}",
-                "customer_id": f"CUST-{random.randint(100, 999)}",
-                "amount": round(random.uniform(10.0, 500.0), 2),
-                "region": random.choice(regions),
-                "tx_time": tx_time.strftime("%Y-%m-%dT%H:%M:%S")
-            }
+            
+            if is_invalid:
+                # Pick a specific failure mode
+                failure_mode = random.choice(["null_region", "negative_amt", "bad_id"])
+                
+                record = {
+                    "tx_id": f"TXN-{random.randint(10000, 99999)}" if failure_mode != "bad_id" else "INVALID_ID_###",
+                    "customer_id": f"CUST-{random.randint(100, 999)}",
+                    "amount": round(random.uniform(-500.0, -10.0), 2) if failure_mode == "negative_amt" else round(random.uniform(10.0, 500.0), 2),
+                    "region": None if failure_mode == "null_region" else random.choice(regions),
+                    "tx_time": tx_time.strftime("%Y-%m-%dT%H:%M:%S")
+                }
+            else:
+                # Standard valid record
+                record = {
+                    "tx_id": f"TXN-{random.randint(10000, 99999)}",
+                    "customer_id": f"CUST-{random.randint(100, 999)}",
+                    "amount": round(random.uniform(10.0, 500.0), 2),
+                    "region": random.choice(regions),
+                    "tx_time": tx_time.strftime("%Y-%m-%dT%H:%M:%S")
+                }
             data.append(record)
         return data
+        
 
     def write_to_landing(self, target_path, num_records=5, run_mode="local"):
         """

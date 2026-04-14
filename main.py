@@ -43,7 +43,7 @@ def main():
             file_name = f"batch_{timestamp}.json"
             
             target = os.path.join(landing_path, file_name) if run_mode == "local" else f"{storage_root}" + landing_path
-            print(target)
+            #print(target)
             generator.write_to_landing(target, num_records=number_of_records, run_mode=run_mode)
 
         # --- RUN PRODUCTION PIPELINE ---
@@ -54,7 +54,7 @@ def main():
             print(f"🏆 Starting Gold Pipeline: {table['name']}")
             engine.run_gold(table, storage_root=storage_root,catalog=catalog)
         else:
-            print(f"🥈 Starting Bronze Pipeline: {table['name']}")
+            print(f"🥉 Starting Bronze Pipeline: {table['name']}")
             engine.run_bronze(table, storage_root=storage_root, catalog=catalog)
 
             
