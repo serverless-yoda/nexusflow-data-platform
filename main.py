@@ -31,7 +31,7 @@ def main():
     generator = NexusDataGenerator(engine.spark)
 
     storage_root = config['settings'].get('storage_root', 'dbfs:/nexusflow')
-
+    catalog = config['settings'].get('catalog', 'nff_catalog')
     for table in config['tables']:
         # --- SEED DATA FOR TESTING ---
         if config['settings'].get('seed_data', False) and 'source_path' in table:
@@ -49,13 +49,13 @@ def main():
         # --- RUN PRODUCTION PIPELINE ---
         if table['type'] == "silver":
             print(f"🥈 Starting Silver Pipeline: {table['name']}")
-            engine.run_silver(table, storage_root=storage_root)
+            engine.run_silver(table, storage_root=storage_root, catalog=catalog)
         elif table['type'] == "gold":
             print(f"🏆 Starting Gold Pipeline: {table['name']}")
-            engine.run_gold(table, storage_root=storage_root)
+            engine.run_gold(table, storage_root=storage_root,catalog=catalog)
         else:
             print(f"🥈 Starting Bronze Pipeline: {table['name']}")
-            engine.run_bronze(table, storage_root=storage_root)
+            engine.run_bronze(table, storage_root=storage_root, catalog=catalog)
 
             
             

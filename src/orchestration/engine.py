@@ -56,10 +56,10 @@ class NexusEngine:
             return full_table_name
         return full_table_name
 
-    def run_bronze(self, table_cfg, storage_root: str):
+    def run_bronze(self, table_cfg, storage_root: str, catalog: str):
         source        = f"{storage_root}/" + self.resolve_path(table_cfg['source_path'])
         checkpoint    = f"{storage_root}/" + self.resolve_path(f"{table_cfg['check_point']}")
-        target_table  = self.resolve_table_name(table_cfg['target_table'])
+        target_table  = self.resolve_table_name(table_cfg['target_table']).replace("REPLACECATALOG", catalog)   
         
         
         if self.run_mode == "local":
@@ -95,7 +95,7 @@ class NexusEngine:
             print(f"✅ Successfully moved data to {target_table}")
         
 
-    def run_silver(self, table_cfg, storage_root: str):
+    def run_silver(self, table_cfg, storage_root: str, catalog: str):
         # 1. Resolve Table Names and Checkpoints
         # The source is now a Delta Table, not a file path
         source_table = f"{table_cfg['source_table']}"
@@ -103,8 +103,8 @@ class NexusEngine:
         # Ensure checkpoint is on ABFSS/DBFS (not Volumes) to avoid previous error
         checkpoint = f"{storage_root}/" + self.resolve_path(f"{table_cfg['check_point']}")
         
-        target_table = self.resolve_table_name(table_cfg['target_table'])
-        quarantine_table = self.resolve_table_name(table_cfg['target_quarantine'])
+        target_table = self.resolve_table_name(table_cfg['target_table']).replace("REPLACECATALOG", catalog)  
+        quarantine_table = self.resolve_table_name(table_cfg['target_quarantine']).replace("REPLACECATALOG", catalog)
         quarantine_path = f"{storage_root}/" + self.resolve_path(table_cfg.get('target_quarantine_path', f"/quarantine/{table_cfg['name']}"))
         target_path =     f"{storage_root}/" + self.resolve_path(table_cfg['target_path'])
 
@@ -156,13 +156,12 @@ class NexusEngine:
         self._apply_storage_optimization(target_table, table_cfg['cluster_by'])
 
     
-    def run_gold(self, table_cfg, storage_root: str):
+    def run_gold(self, table_cfg, storage_root: str, catalog: str):
         print(f"🏆 Processing Gold Layer: {table_cfg['name']}")
         
-        source_table = self.resolve_table_name(table_cfg['source_table'])
-        target_table = self.resolve_table_name(table_cfg['target_table'])
+        source_table = self.resolve_table_name(table_cfg['source_table']).replace("REPLACECATALOG", catalog)  
+        target_table = self.resolve_table_name(table_cfg['target_table']).replace("REPLACECATALOG", catalog)
         target_path = f"{storage_root}/" + self.resolve_path(table_cfg['target_path'])
-        target_table = self.resolve_table_name(table_cfg['target_table'])
 
         silver_df = self.spark.read.table(source_table)
         
