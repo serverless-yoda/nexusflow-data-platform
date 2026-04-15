@@ -2,27 +2,41 @@ import os
 from src.common.spark_session import NexusSpark
 from pyspark.sql import functions as F
 
-# 1. Initialize the Nexus Spark Session
-spark = NexusSpark(run_mode="local")
+# 1. Connect to your Nexus Spark Session
+spark = NexusSpark.get_session('local')
 
-# 2. Define your base path
+# 2. Base path matches your YAML 'local_base_path'
 base_path = os.path.abspath("./data")
 
-# 3. Helper to display tables
-def inspect_layer(layer_name, sub_path):
-    full_path = os.path.join(base_path, sub_path.strip("/"))
-    print(f"\n{'='*20} 🔍 {layer_name.upper()} LAYER {'='*20}")
+def inspect_layer(layer_name, table_name, sub_path):
+    # This now resolves to ./data/bronze, ./data/silver, etc.
+    full_path = os.path.abspath(os.path.join(base_path, sub_path.lstrip("/")))
     
-    if os.path.exists(full_path):
-        # Read directly from Delta files using the Nexus Session
-        df = spark.read.format("delta").load(full_path)
-        print(f"📍 Location: {full_path}")
-        print(f"📊 Total Records: {df.count()}")
-        df.show(5, truncate=False)
-    else:
-        print(f"⚠️ {layer_name} not found at {full_path}")
+    print(f"\n{'='*15} 🔍 {layer_name.upper()} LAYER {'='*15}")
+    
+    # Check 1: Catalog Registration
+    exists_in_catalog = spark.catalog.tableExists(table_name)
+    catalog_status = "✅ REGISTERED" if exists_in_catalog else "❌ NOT FOUND"
+    print(f"Table: {table_name.ljust(20)} | Catalog: {catalog_status}")
 
-# 4. Run inspections
-inspect_layer("Silver", "silver/transactions")
-inspect_layer("Quarantine", "quarantine/transactions")
-inspect_layer("Gold", "gold/regional_kpis")
+    # Check 2: Physical Storage
+    if os.path.exists(full_path):
+        try:
+            df = spark.read.format("delta").load(full_path)
+            print(f"Path:  {full_path}")
+            print(f"Count: {df.count()} records")
+            
+            if df.count() > 0:
+                df.show(5, truncate=False)
+        except Exception as e:
+            print(f"⚠️ Delta Load Error: {e}")
+    else:
+        print(f"⚠️ Storage folder missing at: {full_path}")
+
+# 3. Execution based on your NEW YML
+inspect_layer("Bronze", "bronze.universal_raw", "/bronze")
+inspect_layer("Silver", "silver.transactions", "/silver")
+inspect_layer("Gold", "gold.regional_kpis", "/gold")
+
+# 4. Quarantine Check (Implicitly created in your Silver logic)
+#inspect_layer("Quarantine", "N/A", "/silver_quarantine")

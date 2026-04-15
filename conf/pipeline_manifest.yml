@@ -1,51 +1,30 @@
-# conf/pipeline_manifest.yml
 settings:
-  run_mode: "databricks"
+  run_mode: "local" # options: "local", "databricks"
+  catalog: "nff_catalog"
   local_base_path: "./data"
-  seed_data: true
-  number_of_records: 20
-  catalog: "nff_catalog_cd21_dev"
-  admin_group: "nff_admin"
-  steward_group: "nff_data_stewards"
-  storage_root: "abfss://data@nexuscd21storagedev.dfs.core.windows.net/nexusflow"
-
-layers:
-  bronze:
-    schema: "bronze_raw"
-    path: "bronze"
-  silver:
-    schema: "silver_refined"
-    path: "silver"
-  gold:
-    schema: "gold_analytics"
-    path: "gold"
+  cloud_base_path: "abfss://data@storage.dfs.core.windows.net"
 
 tables:
-  # --- BRONZE LAYER (Streaming) ---
-  - name: "transactions_bronze"
+  - name: "universal_raw_ingestion"
     type: "bronze"
-    source_path: "/landing/transactions/"
-    check_point: "/checkpoints/bronze/"
-    target_table: "{catalog}.bronze_raw.transactions" 
-    cluster_by: ["_ingested_at"]
+    source_path: "/landing/raw/"
+    target_table: "bronze.universal_raw"
+    external_location: "/bronze"
 
-  # --- SILVER LAYER (Streaming) ---
   - name: "transactions_silver"
     type: "silver"
-    
-    source_table: "{catalog}.bronze_raw.transactions"
-    check_point: "/checkpoints/transactions/"
-    target_path: "/silver/transactions/"
-    target_table: "{catalog}.silver_refined.transactions" 
-    target_quarantine_path: "/quarantine/transactions/"
-    target_quarantine: "{catalog}.quarantine.transactions"
-    rules_method: "get_transaction_rules"
+    source_table: "bronze.universal_raw"
+    target_table: "silver.transactions"
+    external_location: "/silver"
+    format: "json"
+    rules:
+      - "amount > 0"
+      - "region IS NOT NULL"
     cluster_by: ["region"]
 
-  # --- GOLD LAYER (Batch) ---
-  - name: "regional_kpis_gold"
+  - name: "regional_kpi_gold"
     type: "gold"
-    source_table: "{catalog}.silver_refined.transactions"
-    target_path: "/gold/regional_kpis/"            
-    target_table: "{catalog}.gold_analytics.regional_kpis"   
-    cluster_by: ["region"]
+    source_table: "silver.transactions"
+    target_table: "gold.regional_kpis"
+    external_location: "/gold"
+    cluster_by: ["report_date"]

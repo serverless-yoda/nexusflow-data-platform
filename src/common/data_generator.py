@@ -53,10 +53,20 @@ class NexusDataGenerator:
         
         if run_mode == "local":
             # Ensure local directory exists
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            with open(target_path, "w") as f:
+            # 1. Ensure the landing folder exists as a DIRECTORY
+            os.makedirs(target_path, exist_ok=True) 
+
+            # 2. Create a unique filename for the records
+            import uuid
+            filename = f"batch_{uuid.uuid4().hex[:8]}.json"
+            full_file_path = os.path.join(target_path, filename)
+
+            # 3. Write the data to that specific file
+            with open(full_file_path, "w") as f:
                 json.dump(data, f)
-            print(f"📍 [LOCAL] Seeded {num_records} records to {target_path}")
+
+            print(f"📍 [LOCAL] Seeded {num_records} records to {full_file_path}")
+
         else:
             # In Databricks, use Spark to write to ABFSS/Unity Catalog paths
             df = self.spark.createDataFrame(data)
