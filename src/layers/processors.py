@@ -1,7 +1,9 @@
+# src/layers/processors.py
 import os
 import pyspark.sql.functions as F
 from src.interfaces.processor import IProcessor
 from src.core.transformer_factory import TransformerFactory
+from src.common.path_resolver import PathResolver
 
 class BaseProcessor:
     def __init__(self, spark, table_cfg, run_mode, base_path):
@@ -10,18 +12,14 @@ class BaseProcessor:
         self.run_mode = run_mode
         self.base_path = base_path
         
-        # Path Resolution
-        raw_path = table_cfg.get('external_location', f"/{table_cfg['name']}")
-        #self.target_path = os.path.abspath(os.path.join(base_path, raw_path.lstrip("/")))
-        #self.checkpoint = os.path.abspath(os.path.join(base_path, "checkpoints", table_cfg['name']))
+        # Resolve the Target Path (Where the Delta data lives)
+        target_suffix = table_cfg.get('external_location', f"/{table_cfg['name']}")
+        self.target_path = PathResolver.resolve(base_path, target_suffix, run_mode)
         
-        self.checkpoint = os.path.abspath(
-            os.path.join(base_path, "checkpoints", self.cfg['type'], self.cfg['name'])
-        )
-        ext_loc = table_cfg.get('external_location', f"/{table_cfg['name']}")
-        self.target_path = os.path.abspath(os.path.join(base_path, ext_loc.lstrip("/")))
+        # Resolve the Checkpoint Path
+        checkpoint_suffix = os.path.join("checkpoints", self.cfg['type'], self.cfg['name'])
+        self.checkpoint = PathResolver.resolve(base_path, checkpoint_suffix, run_mode)
 
-        # --- NEW: Schema Provisioning ---
         self._ensure_schema_exists()
 
     def _ensure_schema_exists(self):
@@ -37,99 +35,140 @@ class BaseProcessor:
 
 class BronzeProcessor(BaseProcessor, IProcessor):
     def process(self):
-        # 1. Robust Path Resolution
-        # Ensure we remove leading slashes to prevent os.path.join issues
-        clean_source = self.cfg['source_path'].lstrip("/")
-        source = os.path.abspath(os.path.join(self.base_path, clean_source))
-        
-        print(f"🔍 Checking source path: {source}")
-        
-        # 2. Defensive Check: Auto-create landing zone if it doesn't exist
-        # Streaming will fail immediately if the source path is missing
-        if not os.path.exists(source):
-            print(f"⚠️ Warning: Source path {source} not found. Creating it...")
-            os.makedirs(source, exist_ok=True)
+        source = PathResolver.resolve(self.base_path, self.cfg['source_path'], self.run_mode)
+        fmt = self.cfg.get('format', 'json').lower()
 
-        # 3. Read Raw Payloads
-        # We use 'text' format for the Universal Bronze pattern
-        df = (self.spark.readStream
-              .format("text")
-              .load(source)
-              .select(
-                  F.col("value").alias("payload"),
-                  F.current_timestamp().alias("ingested_at"),
-                  F.input_file_name().alias("source_file"),
-                  # Extract extension (json, csv, xml)
-                  F.element_at(F.split(F.input_file_name(), "\."), -1).alias("file_format")
-              ))
+        if self.run_mode != "local":
+            # --- CLOUD: Use Auto-Loader ---
+            df = (
+                    self.spark.readStream
+                        .format("cloudFiles")
+                        .option("cloudFiles.format", fmt)
+                        .option("cloudFiles.schemaLocation", f"{self.checkpoint}/_schema")
+                        .load(source)
+                  )
+        else:
+            # --- LOCAL: Use Standard Spark Stream ---
+            print(f'✅ Processing in LOCAL mode with format: {fmt}')
+            if fmt == "parquet":
+                # Direct structured read
+                df = self.spark.readStream.format("parquet").load(source)
+            else:
+                # Binary read for JSON/CSV to maintain the "Universal" payload pattern
+                df = (
+                        self.spark.readStream
+                            .format("binaryFile")
+                            .option('recursiveFileLookup', 'true')
+                            .load(source)
+                            .select(
+                                F.col("content").cast("string").alias("payload"),
+                                F.element_at(F.split(F.col("path"), "\."), -1).alias("file_format")
+                            )
+                      )
+                
+        # Common Metadata for both modes
+        df = df.select("*", 
+                       F.current_timestamp().alias("ingested_at"),
+                       F.input_file_name().alias("source_file"))
 
-        # 4. Write to Delta (Universal Bronze Table)
-        print(f"📥 Streaming to {self.cfg['target_table']}...")
-        query = (df.writeStream
-         .format("delta")
-         .option("checkpointLocation", self.checkpoint)
-         .option("path", self.target_path) 
-         .trigger(availableNow=True)
-         .toTable(self.cfg['target_table']))
+        # # 2. Unified Write
+        query = (
+                    df.writeStream
+                        .format("delta")
+                        .option("mergeSchema", "true") 
+                        .option("checkpointLocation", self.checkpoint)
+                        .trigger(availableNow=True)
+                        .toTable(self.cfg['target_table'])
+                )
 
         query.awaitTermination()
+        print(f"✅ Bronze processing completed for {self.cfg['name']}. Table name is {self.cfg['target_table']}")
 
 class SilverProcessor(BaseProcessor, IProcessor):
-    def process(self):
-        transformer = TransformerFactory.get_transformer(self.cfg)
-        source_table = self.cfg['source_table'] # "bronze.universal_raw"
 
+    def process(self):
+        print(f"DEBUG: Config for transformer: {self.cfg}")
+        transformer = TransformerFactory.get_transformer(self.spark, self.cfg)
+        source_table = self.cfg['source_table']
+
+        # 1. Protective check for source existence
         if not self.spark.catalog.tableExists(source_table):
-            print(f"❌ Silver Error: Source {source_table} not found in catalog.")
+            print(f"❌ Silver Error: Source {source_table} not found.")
             return
 
         stream = self.spark.readStream.table(source_table)
 
         def micro_batch(batch_df, batch_id):
+            # Apply the Strategy (JSON parsing, Exploding, Quality Tagging)
             processed = transformer.transform(batch_df).cache()
             
-            # 1. Atomic split: Valid vs Quarantine
-            valid_df = processed.filter("is_valid").drop("is_valid")
-            quarantine_df = processed.filter("!is_valid")
-
-            # 2. Save and Register Valid Data
-            (valid_df.write.format("delta")
-                .mode("append")
-                .option("path", self.target_path) # Directs physical storage
-                .saveAsTable(self.cfg['target_table'])) # Links to 'silver.transactions'
+            # --- ROUTING LOGIC ---
             
-            # 3. Save Quarantine (usually as a separate path/table)
-            (quarantine_df.write.format("delta")
-                .mode("append")
-                .save(self.target_path + "_quarantine"))
+            # 1. Valid Records: Ready for business
+            valid_df = processed.filter("is_valid == true").drop("is_valid")
+            
+            # 2. Quarantine Records: Failed rules (e.g., amount < 0)
+            quarantine_df = processed.filter("is_valid == false")
 
+            # Save Valid Data
+            (
+                valid_df
+                    .write
+                    .format("delta")
+                        .mode("append")
+                        #.option("path", self.target_path) 
+                        .saveAsTable(self.cfg['target_table'])
+            )
+
+            # Save Quarantine Data 
+            # We append a suffix to the path to keep it isolated
+            (
+                quarantine_df
+                    .write.format("delta")
+                        .mode("append")
+                        #.option("path", f"{self.target_path}_quarantine")
+                        .saveAsTable(f"{self.cfg['target_table']}_quarantine")
+            )
+            
+            print(f'✅ Silver Batch {batch_id} processed: {valid_df.count()} valid records for {self.cfg["target_table"]}, {quarantine_df.count()} quarantined records for {self.cfg["target_table"]}_quarantine.')
+            
+            # Clear cache for the next batch
             processed.unpersist()
 
-        (stream.writeStream.foreachBatch(micro_batch).option("checkpointLocation", self.checkpoint)
-         .trigger(availableNow=True).start().awaitTermination())
+        # Start the streaming query
+        (
+            stream.writeStream
+            .foreachBatch(micro_batch)
+            .option("checkpointLocation", self.checkpoint)
+            .trigger(availableNow=True)
+            .start()
+            .awaitTermination()
+        )
 
 class GoldProcessor(BaseProcessor, IProcessor):
     def process(self):
-        source_table = self.cfg['source_table']
+        source_table = self.cfg['source_table'] # e.g., "silver.transactions"
         
-        # 1. Defensive Check: Does the source exist?
         if not self.spark.catalog.tableExists(source_table):
-            print(f"⚠️ Gold Layer Skip: Source table {source_table} not found yet. "
-                  "This is normal if Silver hasn't processed data yet.")
+            print(f"⚠️ Gold Skip: {source_table} not available.")
             return
 
-        # 2. Proceed with transformation
-        transformer = TransformerFactory.get_transformer(self.cfg)
+        print(f"🥇 Generating Regional Gold Report: {self.cfg['target_table']}...")
         
-        print(f"🥇 Generating Gold Layer: {self.cfg['target_table']}...")
-        df = self.spark.read.table(source_table)
+        # 1. Read validated data
+        print(f"DEBUG: Config for transformer: {self.cfg}")
+        transformer = TransformerFactory.get_transformer(self.spark, self.cfg)
+        silver_df = self.spark.read.table(source_table)
         
-        gold_df = transformer.transform(df)
+        # 2. Transform into KPIs
+        gold_df = transformer.transform(silver_df)
         
-        # 3. Write to Gold
-        (gold_df.write
-         .format("delta")
-         .mode("overwrite")
-         .option("path", self.target_path)
-         .saveAsTable(self.cfg['target_table'])
-         )
+        # 3. Write as an optimized Gold Table
+        (
+            gold_df
+                .write
+                .format("delta")
+                .mode("overwrite")  # Full refresh for reporting accuracy
+                #.option("path", self.target_path)
+                .saveAsTable(self.cfg['target_table'])
+        )

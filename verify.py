@@ -1,4 +1,5 @@
 import os
+from src.common.path_resolver import PathResolver
 from src.common.spark_session import NexusSpark
 from pyspark.sql import functions as F
 
@@ -34,9 +35,13 @@ def inspect_layer(layer_name, table_name, sub_path):
         print(f"⚠️ Storage folder missing at: {full_path}")
 
 # 3. Execution based on your NEW YML
-inspect_layer("Bronze", "bronze.universal_raw", "/bronze")
-inspect_layer("Silver", "silver.transactions", "/silver")
-inspect_layer("Gold", "gold.regional_kpis", "/gold")
+#inspect_layer("Bronze", "bronze.universal_raw", "/bronze")
+#inspect_layer("Silver", "silver.transactions", "/silver")
+#inspect_layer("Gold", "gold.regional_kpis", "/gold")
 
 # 4. Quarantine Check (Implicitly created in your Silver logic)
 #inspect_layer("Quarantine", "N/A", "/silver_quarantine")
+
+delta_path = PathResolver.resolve('./spark_warehouse', 'bronze.db', 'local')
+df = spark.read.format("delta").load(f"{delta_path}/universal_raw")
+df.show()
