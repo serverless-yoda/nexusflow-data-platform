@@ -1,8 +1,8 @@
 settings:
-  run_mode: "local" # Toggle to "databricks" for cloudFiles/Auto-Loader
-  catalog: "nff_catalog"
+  run_mode: "databricks" # Toggle to "databricks" for cloudFiles/Auto-Loader
+  catalog: "nff_catalog_78b3_dev"
   local_base_path: "./data"
-  cloud_base_path: "abfss://data@storage.dfs.core.windows.net"
+  cloud_base_path: "abfss://data@nexus78b3storagedev.dfs.core.windows.net"
 
 tables:
   # --- BRONZE LAYER ---
@@ -10,7 +10,7 @@ tables:
   - name: "universal_raw_ingestion"
     type: "bronze"
     source_path: "/landing/"
-    target_table: "bronze.universal_raw"
+    target_table: "bronze_raw.universal_raw"
     external_location: "/bronze"
 
   # --- SILVER LAYER: SCENARIO 1 (Nested & Corrupted JSON) ---
@@ -18,8 +18,8 @@ tables:
   - name: "transactions_nested_silver"
     type: "silver"
     format: "json"
-    source_table: "bronze.universal_raw"
-    target_table: "silver.transactions_nested"
+    source_table: "bronze_raw.universal_raw"
+    target_table: "silver_refined.transactions_nested"
     # Matches the _nest_data structure from your generator
     schema: "store_id STRING, tx_date STRING, items ARRAY<STRUCT<tx_id: STRING, amount: DOUBLE, region: STRING, tx_time: STRING>>"
     explode_col: "items"
@@ -34,8 +34,8 @@ tables:
   - name: "transactions_legacy_silver"
     type: "silver"
     format: "csv"
-    source_table: "bronze.universal_raw"
-    target_table: "silver.transactions_legacy"
+    source_table: "bronze_raw.universal_raw"
+    target_table: "silver_refined.transactions_legacy"
     schema: "tx_id STRING, amount DOUBLE, region STRING, tx_time STRING"
     external_location: "/silver_legacy"
     rules:
@@ -48,8 +48,8 @@ tables:
   - name: "sensors_parquet_silver"
     type: "silver"
     format: "parquet"
-    source_table: "bronze.universal_raw"
-    target_table: "silver.sensors_parquet"
+    source_table: "bronze_raw.universal_raw"
+    target_table: "silver_refined.sensors_parquet"
     schema: "tx_id STRING, amount DOUBLE, region STRING, tx_time STRING"
     external_location: "/silver_parquet"
     rules:
@@ -59,7 +59,7 @@ tables:
   # Aggregates results from the Nested Silver table for NZ reporting
   - name: "regional_kpi_gold"
     type: "gold"
-    source_table: "silver.transactions_nested"
-    target_table: "gold.regional_kpis"
+    source_table: "silver_refined.transactions_nested"
+    target_table: "gold_analytics.regional_kpis"
     external_location: "/gold"
     cluster_by: ["region"]

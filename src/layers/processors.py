@@ -1,9 +1,18 @@
 # src/layers/processors.py
 import os
 import pyspark.sql.functions as F
+from pyspark.sql.types import StructType, StructField, StringType, BinaryType, LongType, TimestampType
 from src.interfaces.processor import IProcessor
 from src.core.transformer_factory import TransformerFactory
 from src.common.path_resolver import PathResolver
+
+# Explicit schema for binaryFile format to override stale Auto Loader schema caches
+_BINARY_FILE_SCHEMA = StructType([
+    StructField("path", StringType()),
+    StructField("modificationTime", TimestampType()),
+    StructField("length", LongType()),
+    StructField("content", BinaryType()),
+])
 
 class BaseProcessor:
     def __init__(self, spark, table_cfg, run_mode, base_path):
@@ -39,13 +48,18 @@ class BronzeProcessor(BaseProcessor, IProcessor):
         fmt = self.cfg.get('format', 'json').lower()
 
         if self.run_mode != "local":
-            # --- CLOUD: Use Auto-Loader ---
+            # --- CLOUD: Use Auto-Loader in binary mode for the Universal Raw pattern ---
             df = (
                     self.spark.readStream
                         .format("cloudFiles")
-                        .option("cloudFiles.format", fmt)
+                        .option("cloudFiles.format", "binaryFile")
                         .option("cloudFiles.schemaLocation", f"{self.checkpoint}/_schema")
+                        .schema(_BINARY_FILE_SCHEMA)
                         .load(source)
+                        .select(
+                            F.col("content").cast("string").alias("payload"),
+                            F.element_at(F.split(F.col("path"), r"\."), -1).alias("file_format")
+                        )
                   )
         else:
             # --- LOCAL: Use Standard Spark Stream ---
@@ -62,7 +76,7 @@ class BronzeProcessor(BaseProcessor, IProcessor):
                             .load(source)
                             .select(
                                 F.col("content").cast("string").alias("payload"),
-                                F.element_at(F.split(F.col("path"), "\."), -1).alias("file_format")
+                                F.element_at(F.split(F.col("path"), r"\."), -1).alias("file_format")
                             )
                       )
                 
