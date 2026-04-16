@@ -1,8 +1,8 @@
 settings:
-  run_mode: "databricks" # Toggle to "databricks" for cloudFiles/Auto-Loader
+  run_mode: "local" # Toggle to "databricks" for cloudFiles/Auto-Loader
   catalog: "nff_catalog_78b3_dev"
   local_base_path: "./data"
-  cloud_base_path: "abfss://data@nexus78b3storagedev.dfs.core.windows.net"
+  cloud_base_path: "abfss://data@dev.dfs.core.windows.net"
 
 tables:
   # --- BRONZE LAYER ---
