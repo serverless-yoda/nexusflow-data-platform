@@ -81,21 +81,32 @@ class SilverTransformerStrategy(ITransformer):
         return processed_df.withColumn("is_valid", F.expr(quality_expr))
             
 class GoldTransformerStrategy(ITransformer):
+    def __init__(self, table_cfg):
+        self.group_by = table_cfg.get('group_by', [])
+        # We expect a dict: {"alias": "expression"}
+        self.aggs = table_cfg.get('aggregations', {})
+        self.sort_by = table_cfg.get('sort_by')
+
     def transform(self, df: DataFrame) -> DataFrame:
         """
-        Aggregates Silver transactions into Regional KPI insights.
+        Dynamically aggregates any Silver table based on YAML metadata.
         """
-        return (df.groupBy("region")
-                .agg(
-                    F.sum("amount").alias("total_revenue"),
-                    F.count("tx_id").alias("transaction_count"),
-                    F.avg("amount").alias("avg_ticket_size"),
-                    F.max("tx_time").alias("last_transaction_at")
-                )
-                # Add a reporting metadata column
-                .withColumn("report_generated_at", F.current_timestamp())
-                .orderBy(F.desc("total_revenue")))
-    
+        # 1. Prepare aggregation expressions
+        # Converts {"total_revenue": "sum(amount)"} -> F.expr("sum(amount)").alias("total_revenue")
+        agg_exprs = [F.expr(expr).alias(alias) for alias, expr in self.aggs.items()]
+
+        # 2. Execute dynamic GroupBy
+        output_df = df.groupBy(*self.group_by).agg(*agg_exprs)
+
+        # 3. Add standard metadata
+        output_df = output_df.withColumn("report_generated_at", F.current_timestamp())
+
+        # 4. Dynamic Sort
+        if self.sort_by:
+            output_df = output_df.orderBy(F.desc(self.sort_by))
+
+        return output_df
+        
 class TransformerFactory:
     @staticmethod
     def get_transformer(spark, table_cfg):
@@ -105,6 +116,6 @@ class TransformerFactory:
             return SilverTransformerStrategy(spark, table_cfg)
             
         if t_type == "gold":
-            return GoldTransformerStrategy()
+            return GoldTransformerStrategy(table_cfg)
             
         raise ValueError(f"No transformer found for layer type: {t_type}")

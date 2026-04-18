@@ -43,6 +43,16 @@ tables:
       - "amount > 0"
     cluster_by: ["region"]
 
+  # - name: "customers_silver"
+  #   type: "silver"
+  #   format: "json"
+  #   source_table: "bronze_raw.universal_raw"
+  #   target_table: "silver_refined.dim_customers"
+  #   # Just adding this block handles the new table!
+  #   schema: "id STRING, email STRING, signup_date STRING" 
+  #   rules:
+  #     - "email LIKE '%@%'"
+
   # --- SILVER LAYER: SCENARIO 3 (Binary Parquet) ---
   # Tests: Direct pass-through logic (skipping payload parsing)
   - name: "sensors_parquet_silver"
@@ -59,7 +69,23 @@ tables:
   # Aggregates results from the Nested Silver table for NZ reporting
   - name: "regional_kpi_gold"
     type: "gold"
-    source_table: "silver_refined.transactions_nested"
+    source_table: "silver_refined.sensors_parquet"
     target_table: "gold_analytics.regional_kpis"
     external_location: "/gold"
+    group_by: ["region"]
+    aggregations:
+      total_revenue: "sum(amount)"
+      transaction_count: "count(tx_id)"
+      avg_ticket_size: "avg(amount)"
+      last_transaction_at: "max(tx_time)"
+    sort_by: "total_revenue"
     cluster_by: ["region"]
+
+  # - name: "customer_count_gold"
+  #   type: "gold"
+  #   source_table: "silver_refined.dim_customers"
+  #   target_table: "gold_analytics.customer_summary"
+  #   # Define aggregations in YAML instead of Python code
+  #   aggregations:
+  #   - "count(id) as total_customers"
+  #   group_by: ["signup_date"]

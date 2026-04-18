@@ -46,10 +46,10 @@ def main():
         generator.write_scenario(f"{base_path}/landing/sensors", format="parquet", corruption=0.0)
 
         # 2. Seed Dirty CSV (The 'Legacy Path')
-        generator.write_scenario(f"{base_path}/landing/legacy_sales", format="csv", corruption=0.2)
+        generator.write_scenario(f"{base_path}/landing/legacy_sales", format="csv", corruption=0.0)
 
         # 3. Seed Nested JSON (The 'Complex Path')
-        generator.write_scenario(f"{base_path}/landing/store_streams", format="json", nested=True, corruption=0.1)
+        generator.write_scenario(f"{base_path}/landing/store_streams", format="json", nested=False, corruption=0.0)
 
             
     except Exception as e:

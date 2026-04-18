@@ -42,6 +42,30 @@ def inspect_layer(layer_name, table_name, sub_path):
 # 4. Quarantine Check (Implicitly created in your Silver logic)
 #inspect_layer("Quarantine", "N/A", "/silver_quarantine")
 
-delta_path = PathResolver.resolve('./spark_warehouse', 'bronze.db', 'local')
+delta_path = PathResolver.resolve('./spark_warehouse', 'bronze_raw.db', 'local')
 df = spark.read.format("delta").load(f"{delta_path}/universal_raw")
 df.show()
+
+delta_path = PathResolver.resolve('./spark_warehouse', 'silver_refined.db', 'local')
+tables = [
+    'sensors_parquet',
+    'sensors_parquet_quarantine',
+    #'transactions_legacy',
+    #'transactions_legacy_quarantine',
+    #'transactions_nested',
+    #'transactions_nested_quarantine',
+]
+for table in tables:
+    print(f"\n--- Inspecting SILVER: {table} ---")
+    df = spark.read.format("delta").load(f"{delta_path}/{table}")
+    df.show()
+
+
+delta_path = PathResolver.resolve('./spark_warehouse', 'gold_analytics.db', 'local')
+tables = [
+    'regional_kpis'
+]
+for table in tables:
+    print(f"\n--- Inspecting GOLD: {table} ---")
+    df = spark.read.format("delta").load(f"{delta_path}/{table}")
+    df.show()

@@ -101,7 +101,7 @@ class BronzeProcessor(BaseProcessor, IProcessor):
 class SilverProcessor(BaseProcessor, IProcessor):
 
     def process(self):
-        print(f"DEBUG: Config for transformer: {self.cfg}")
+        #print(f"DEBUG: Config for transformer: {self.cfg}")
         transformer = TransformerFactory.get_transformer(self.spark, self.cfg)
         source_table = self.cfg['source_table']
 
@@ -170,7 +170,7 @@ class GoldProcessor(BaseProcessor, IProcessor):
         print(f"🥇 Generating Regional Gold Report: {self.cfg['target_table']}...")
         
         # 1. Read validated data
-        print(f"DEBUG: Config for transformer: {self.cfg}")
+        #print(f"DEBUG: Config for transformer: {self.cfg}")
         transformer = TransformerFactory.get_transformer(self.spark, self.cfg)
         silver_df = self.spark.read.table(source_table)
         
