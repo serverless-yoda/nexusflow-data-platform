@@ -74,5 +74,11 @@ def main():
         instance = processor_class(spark, table_cfg, run_mode, base_path)
         instance.process()
 
+    # Clean up old file versions to save local disk space
+    for table_cfg in config['tables']:
+        if table_cfg['type'] == "gold":
+            spark.sql(f"VACUUM {table_cfg['target_table']} RETAIN 168 HOURS")
+            spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+
 if __name__ == "__main__":
     main()

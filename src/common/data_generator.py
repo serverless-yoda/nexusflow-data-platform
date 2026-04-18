@@ -60,7 +60,7 @@ class NexusDataGenerator:
             corrupted_data = self._nest_data(corrupted_data)
 
         # Create DataFrame
-        df = self.spark.createDataFrame(corrupted_data)
+        df = self.spark.createDataFrame(raw_data)
         
         # Force all to string for the write phase to avoid schema mismatch crashes
         if format in ["json", "csv"]:

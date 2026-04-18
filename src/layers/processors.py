@@ -1,5 +1,6 @@
 # src/layers/processors.py
 import os
+from delta import DeltaTable
 import pyspark.sql.functions as F
 from pyspark.sql.types import StructType, StructField, StringType, BinaryType, LongType, TimestampType
 from src.interfaces.processor import IProcessor
@@ -104,6 +105,7 @@ class SilverProcessor(BaseProcessor, IProcessor):
         #print(f"DEBUG: Config for transformer: {self.cfg}")
         transformer = TransformerFactory.get_transformer(self.spark, self.cfg)
         source_table = self.cfg['source_table']
+        merge_key = self.cfg.get('merge_key')
 
         # 1. Protective check for source existence
         if not self.spark.catalog.tableExists(source_table):
@@ -115,7 +117,6 @@ class SilverProcessor(BaseProcessor, IProcessor):
         def micro_batch(batch_df, batch_id):
             # Apply the Strategy (JSON parsing, Exploding, Quality Tagging)
             processed = transformer.transform(batch_df).cache()
-            
             # --- ROUTING LOGIC ---
             
             # 1. Valid Records: Ready for business
@@ -125,15 +126,18 @@ class SilverProcessor(BaseProcessor, IProcessor):
             quarantine_df = processed.filter("is_valid == false")
 
             # Save Valid Data
-            (
-                valid_df
-                    .write
-                    .format("delta")
-                        .mode("append")
-                        #.option("path", self.target_path) 
-                        .saveAsTable(self.cfg['target_table'])
-            )
-
+            if merge_key and self.spark.catalog.tableExists(self.cfg['target_table']):
+                print(f"🔄 Merging Batch {batch_id} into {self.cfg['target_table']}...")
+                target_delta = DeltaTable.forName(self.spark, self.cfg['target_table'])
+                
+                (target_delta.alias("t")
+                    .merge(valid_df.alias("s"), f"t.{merge_key} = s.{merge_key}")
+                    .whenMatchedUpdateAll()
+                    .whenNotMatchedInsertAll()
+                    .execute())
+            else:
+                # Fallback for first run or tables without a merge_key
+                valid_df.write.format("delta").mode("append").saveAsTable(self.cfg['target_table'])
             # Save Quarantine Data 
             # We append a suffix to the path to keep it isolated
             (

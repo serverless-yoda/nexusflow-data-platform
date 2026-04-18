@@ -44,16 +44,16 @@ def inspect_layer(layer_name, table_name, sub_path):
 
 delta_path = PathResolver.resolve('./spark_warehouse', 'bronze_raw.db', 'local')
 df = spark.read.format("delta").load(f"{delta_path}/universal_raw")
-df.show()
+df.show(truncate=True)
 
 delta_path = PathResolver.resolve('./spark_warehouse', 'silver_refined.db', 'local')
 tables = [
-    'sensors_parquet',
-    'sensors_parquet_quarantine',
-    #'transactions_legacy',
-    #'transactions_legacy_quarantine',
-    #'transactions_nested',
-    #'transactions_nested_quarantine',
+    'transactions_parquet',
+    'transactions_parquet_quarantine',
+    'transactions_csv',
+    'transactions_csv_quarantine',
+    'transactions_json',
+    'transactions_json_quarantine',
 ]
 for table in tables:
     print(f"\n--- Inspecting SILVER: {table} ---")

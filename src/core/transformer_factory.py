@@ -2,6 +2,7 @@
 from pyspark.sql import DataFrame
 import pyspark.sql.functions as F
 from src.interfaces.processor import ITransformer
+from pyspark.sql.types import StructType, StructField, StringType
 
 class SilverTransformerStrategy(ITransformer):
     def __init__(self, spark, cfg):
@@ -16,6 +17,30 @@ class SilverTransformerStrategy(ITransformer):
         self.rules = cfg.get('rules', [])
         self.explode_col = cfg.get('explode_col')
 
+
+    def process_dynamic_payload(self,df):
+        # 1. Split into lines
+        split_regex = r"\\r\\n|[\r\n]+"
+        df_lines = df.withColumn("raw_line", F.explode(F.split(F.col("payload"), split_regex))) \
+                    .withColumn("raw_line", F.trim(F.col("raw_line"))) \
+                    .filter(F.col("raw_line") != "")
+
+        # 2. Extract the header from the first row of the first file 
+        # (Note: In a production stream, you'd usually peek at the first record)
+        header_raw = df_lines.filter(F.col("raw_line").contains(",")).first()["raw_line"]
+        column_names = header_raw.split(",")
+
+        # 3. Dynamically build the schema based on those names
+        # We use StringType by default; you can add logic to cast types later
+        dynamic_schema = StructType([StructField(name, StringType(), True) for name in column_names])
+
+        # 4. Process the data, skipping the header line
+        return (
+            df_lines
+            .filter(~F.col("raw_line").startswith(header_raw))
+            .withColumn("data", F.from_csv(F.col("raw_line"), dynamic_schema.simpleString(), {"sep": ","}))
+            .select("data.*", "ingested_at", "source_file")
+        )
 
     def transform(self, df: DataFrame) -> DataFrame:
         
@@ -56,11 +81,11 @@ class SilverTransformerStrategy(ITransformer):
             else:
                 processed_df = df_filtered
 
-        elif self.fmt == "csv":
+        elif self.fmt == "csv": 
             if has_payload:
-                processed_df = (df_filtered.withColumn("data", F.from_csv(F.col("payload"), self.target_schema))
-                                .select("data.*", "ingested_at", "source_file"))
+                processed_df = self.process_dynamic_payload(df_filtered)
             else:
+                print(f'⚠️ Processing CSV without payload. This is unexpected for CSV format. ')
                 processed_df = df_filtered
         else:
             raise ValueError(f"Unsupported format: {self.fmt}")
@@ -71,6 +96,7 @@ class SilverTransformerStrategy(ITransformer):
                             .withColumn("exploded", F.explode_outer(F.col(self.explode_col)))
                             .select("*", "exploded.*")
                             .drop(self.explode_col, "exploded"))
+            processed_df.show(5, truncate=False)
 
         # 4. Apply Quality Rules
         # Now that processed_df is structured, 'amount' will be resolved!
@@ -78,7 +104,8 @@ class SilverTransformerStrategy(ITransformer):
         
         # Final safety: if for some reason 'amount' is still missing, 
         # this will give a clearer error than the AnalysisException
-        return processed_df.withColumn("is_valid", F.expr(quality_expr))
+        new_df_processed = processed_df.withColumn("is_valid", F.expr(quality_expr))
+        return new_df_processed
             
 class GoldTransformerStrategy(ITransformer):
     def __init__(self, table_cfg):

@@ -19,7 +19,7 @@ tables:
     type: "silver"
     format: "json"
     source_table: "bronze_raw.universal_raw"
-    target_table: "silver_refined.transactions_nested"
+    target_table: "silver_refined.transactions_json"
     # Matches the _nest_data structure from your generator
     schema: "store_id STRING, tx_date STRING, items ARRAY<STRUCT<tx_id: STRING, amount: DOUBLE, region: STRING, tx_time: STRING>>"
     explode_col: "items"
@@ -35,7 +35,7 @@ tables:
     type: "silver"
     format: "csv"
     source_table: "bronze_raw.universal_raw"
-    target_table: "silver_refined.transactions_legacy"
+    target_table: "silver_refined.transactions_csv"
     schema: "tx_id STRING, amount DOUBLE, region STRING, tx_time STRING"
     external_location: "/silver_legacy"
     rules:
@@ -43,15 +43,6 @@ tables:
       - "amount > 0"
     cluster_by: ["region"]
 
-  # - name: "customers_silver"
-  #   type: "silver"
-  #   format: "json"
-  #   source_table: "bronze_raw.universal_raw"
-  #   target_table: "silver_refined.dim_customers"
-  #   # Just adding this block handles the new table!
-  #   schema: "id STRING, email STRING, signup_date STRING" 
-  #   rules:
-  #     - "email LIKE '%@%'"
 
   # --- SILVER LAYER: SCENARIO 3 (Binary Parquet) ---
   # Tests: Direct pass-through logic (skipping payload parsing)
@@ -59,7 +50,7 @@ tables:
     type: "silver"
     format: "parquet"
     source_table: "bronze_raw.universal_raw"
-    target_table: "silver_refined.sensors_parquet"
+    target_table: "silver_refined.transactions_parquet"
     schema: "tx_id STRING, amount DOUBLE, region STRING, tx_time STRING"
     external_location: "/silver_parquet"
     rules:
@@ -69,7 +60,7 @@ tables:
   # Aggregates results from the Nested Silver table for NZ reporting
   - name: "regional_kpi_gold"
     type: "gold"
-    source_table: "silver_refined.sensors_parquet"
+    source_table: "silver_refined.transactions_json"
     target_table: "gold_analytics.regional_kpis"
     external_location: "/gold"
     group_by: ["region"]
@@ -80,12 +71,3 @@ tables:
       last_transaction_at: "max(tx_time)"
     sort_by: "total_revenue"
     cluster_by: ["region"]
-
-  # - name: "customer_count_gold"
-  #   type: "gold"
-  #   source_table: "silver_refined.dim_customers"
-  #   target_table: "gold_analytics.customer_summary"
-  #   # Define aggregations in YAML instead of Python code
-  #   aggregations:
-  #   - "count(id) as total_customers"
-  #   group_by: ["signup_date"]
