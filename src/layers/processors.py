@@ -1,6 +1,7 @@
 # src/layers/processors.py
 import os
 from delta import DeltaTable
+from pyspark.sql import DataFrame
 import pyspark.sql.functions as F
 from pyspark.sql.types import StructType, StructField, StringType, BinaryType, LongType, TimestampType
 from src.interfaces.processor import IProcessor
@@ -42,6 +43,17 @@ class BaseProcessor:
             schema_name = table_name.split(".")[0]
             print(f"🛠️ Ensuring schema '{schema_name}' exists...")
             self.spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+
+    def _add_audit_metadata(self, df: DataFrame) -> DataFrame:
+        """
+        Standardizes audit columns across all layers.
+        """
+        return (df
+                .withColumn("_pipeline_run_id", F.lit(self.cfg['name']))
+                .withColumn("_processed_at", F.current_timestamp())
+                .withColumn("_run_mode", F.lit(self.run_mode))
+                .withColumn("_user", F.lit(os.getenv("USERNAME") or os.getenv("USER")))
+               )
 
 class BronzeProcessor(BaseProcessor, IProcessor):
     def process(self):
@@ -86,6 +98,8 @@ class BronzeProcessor(BaseProcessor, IProcessor):
                        F.current_timestamp().alias("ingested_at"),
                        F.input_file_name().alias("source_file"))
 
+        df = self._add_audit_metadata(df)
+
         # # 2. Unified Write
         query = (
                     df.writeStream
@@ -119,11 +133,13 @@ class SilverProcessor(BaseProcessor, IProcessor):
             processed = transformer.transform(batch_df).cache()
             # --- ROUTING LOGIC ---
             
+            processed_with_audit = self._add_audit_metadata(processed)
+            
             # 1. Valid Records: Ready for business
-            valid_df = processed.filter("is_valid == true").drop("is_valid")
+            valid_df = processed_with_audit.filter("is_valid == true").drop("is_valid")
             
             # 2. Quarantine Records: Failed rules (e.g., amount < 0)
-            quarantine_df = processed.filter("is_valid == false")
+            quarantine_df = processed_with_audit.filter("is_valid == false")
 
             # Save Valid Data
             if merge_key and self.spark.catalog.tableExists(self.cfg['target_table']):
