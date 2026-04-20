@@ -215,6 +215,8 @@ conf/secret_map.yml
 infra/dev/terraform.tfvars
 infra/prod/terraform.tfvars
 infra/dev/terraform.tfstate
+infra/dev/.terraform.tfstate.lock.info
+infra/prod/.terraform.tfstate.lock.info
 infra/prod/terraform.tfstate    
 infra/dev/terraform.tfstate.backup
 infra/prod/terraform.tfstate.backup

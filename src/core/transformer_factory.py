@@ -108,32 +108,54 @@ class SilverTransformerStrategy(ITransformer):
         return new_df_processed
             
 class GoldTransformerStrategy(ITransformer):
-    def __init__(self, table_cfg):
+    def __init__(self, table_cfg, spark):
+        self.spark = spark
         self.group_by = table_cfg.get('group_by', [])
-        # We expect a dict: {"alias": "expression"}
         self.aggs = table_cfg.get('aggregations', {})
+        self.joins = table_cfg.get('joins', [])
         self.sort_by = table_cfg.get('sort_by')
 
     def transform(self, df: DataFrame) -> DataFrame:
-        """
-        Dynamically aggregates any Silver table based on YAML metadata.
-        """
-        # 1. Prepare aggregation expressions
-        # Converts {"total_revenue": "sum(amount)"} -> F.expr("sum(amount)").alias("total_revenue")
-        agg_exprs = [F.expr(expr).alias(alias) for alias, expr in self.aggs.items()]
+        output_df = df
 
-        # 2. Execute dynamic GroupBy
-        output_df = df.groupBy(*self.group_by).agg(*agg_exprs)
+        for j in self.joins:
+            target_join_table = j.get('table')
+            join_key = j.get('on')
+            join_type = j.get('type', 'inner')
 
-        # 3. Add standard metadata
-        output_df = output_df.withColumn("report_generated_at", F.current_timestamp())
+            if self.spark.catalog.tableExists(target_join_table):
+                # 1. Read the right-hand table
+                right_df = self.spark.read.table(target_join_table)
+                
+                # 2. THE SLEDGEHAMMER: Find overlapping columns (except the join key)
+                # This prevents [AMBIGUOUS_REFERENCE] because only one version of 
+                # 'customer_id' (or any other shared col) will exist after this.
+                duplicate_cols = [c for c in right_df.columns if c in output_df.columns and c != join_key]
+                right_df = right_df.drop(*duplicate_cols)
 
-        # 4. Dynamic Sort
+                print(f"🔗 Joining {target_join_table} on {join_key} (Dropped duplicates: {duplicate_cols})")
+
+                # 3. Perform the join using the string-based 'on' parameter
+                # We pass the string directly, NOT in a list [].
+                output_df = output_df.join(right_df, on=join_key, how=join_type)
+            else:
+                print(f"⚠️ Table {target_join_table} not found.")
+
+        # --- AGGREGATION ---
+        if self.group_by:
+            # Wrap strings in F.col to be safe
+            group_cols = [F.col(c) for c in self.group_by]
+            
+            # Create aggregation expressions from YAML strings
+            agg_exprs = [F.expr(expr).alias(alias) for alias, expr in self.aggs.items()]
+            
+            output_df = output_df.groupBy(*group_cols).agg(*agg_exprs)
+
         if self.sort_by:
             output_df = output_df.orderBy(F.desc(self.sort_by))
 
         return output_df
-        
+                    
 class TransformerFactory:
     @staticmethod
     def get_transformer(spark, table_cfg):
@@ -143,6 +165,6 @@ class TransformerFactory:
             return SilverTransformerStrategy(spark, table_cfg)
             
         if t_type == "gold":
-            return GoldTransformerStrategy(table_cfg)
+            return GoldTransformerStrategy(table_cfg, spark)
             
         raise ValueError(f"No transformer found for layer type: {t_type}")

@@ -1,0 +1,59 @@
+settings:
+  run_mode: "local"
+  catalog: "nff_catalog_78b3_dev"
+  local_base_path: "./data"
+
+tables:
+  # --- BRONZE ---
+  - name: "ml_raw_ingestion"
+    type: "bronze"
+    source_path: "/landing/ml_data"
+    target_table: "bronze_raw.ml_universal"
+
+  # --- SILVER: DIMENSION (Features) ---
+  - name: "customers_ml_silver"
+    type: "silver"
+    format: "parquet"
+    source_table: "bronze_raw.ml_universal"
+    target_table: "silver_refined.customers_ml"
+    merge_key: "customer_id"
+    # Note: Target 'is_churned' is preserved here
+    schema: >
+      customer_id STRING, tenure_months INT, support_tickets INT, 
+      tier STRING, is_churned INT
+    rules:
+      - "support_tickets < 100" # Filters the '999' outlier from generator
+      - "customer_id IS NOT NULL"
+
+  # --- SILVER: FACT (Behavioral Signal) ---
+  - name: "transactions_ml_silver"
+    type: "silver"
+    format: "json"
+    source_table: "bronze_raw.ml_universal"
+    target_table: "silver_refined.transactions_ml"
+    merge_key: "tx_id"
+    schema: "tx_id STRING, customer_id STRING, amount DOUBLE, tx_time STRING"
+    rules:
+      - "customer_id IS NOT NULL"
+      - "amount > 0"
+
+  # --- GOLD: FEATURE STORE (The ML Training Table) ---
+  - name: "churn_prediction_training_set"
+    type: "gold"
+    source_table: "silver_refined.customers_ml"
+    target_table: "gold_ml.churn_features"
+    joins:
+      - table: "silver_refined.transactions_ml"
+        on: "customer_id"
+        type: "left" # Ensures we don't lose customers who have 0 transactions
+    group_by: 
+      - "customer_id"
+      - "tenure_months"
+      - "support_tickets"
+      - "tier"
+      - "is_churned" # The Label
+    aggregations:
+      # Engineered behavioral features
+      total_lifetime_spend: "sum(amount)"
+      avg_tx_value: "avg(amount)"
+      frequency_score: "count(tx_id)"
