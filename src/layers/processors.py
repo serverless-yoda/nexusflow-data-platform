@@ -131,6 +131,7 @@ class SilverProcessor(BaseProcessor, IProcessor):
         def micro_batch(batch_df, batch_id):
             # Apply the Strategy (JSON parsing, Exploding, Quality Tagging)
             processed = transformer.transform(batch_df).cache()
+            processed.show(5, truncate=False)  # Debug: Check transformed data before routing
             # --- ROUTING LOGIC ---
             
             processed_with_audit = self._add_audit_metadata(processed)

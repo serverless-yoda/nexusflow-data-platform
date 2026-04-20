@@ -43,6 +43,11 @@ resource "databricks_schema" "gold" {
   name         = "gold_analytics"
 }
 
+resource "databricks_schema" "gold_ml" {
+  catalog_name = databricks_catalog.nff_catalog.id
+  name         = "gold_ml"
+}
+
 resource "databricks_schema" "quarantine" {
   catalog_name = databricks_catalog.nff_catalog.id
   name         = "quarantine"

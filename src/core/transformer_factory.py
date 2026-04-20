@@ -47,19 +47,21 @@ class SilverTransformerStrategy(ITransformer):
         if self.target_schema is None:
             # Fallback to avoid PySparkTypeError
             return df
-    
+        df.printSchema()  # Debug: Check incoming schema
         # 1. Identify what we are dealing with
         has_payload = "payload" in df.columns
         
         # Filter for the specific format we want to process in this instance
+        print(f"🔍 Detected format: {self.fmt}. Has payload: {has_payload}")
         df_filtered = df.filter(F.col("file_format") == self.fmt)
-
+        df_filtered.show(5, truncate=False)  # Debug: Check filtered data
         # 2. Extract the data into a structured format (processed_df)
         if self.fmt == "parquet":
             if has_payload:
                 # LOCAL RE-READ LOGIC
                 # We collect the distinct file paths that were ingested in this micro-batch
-                rows = df_filtered.select("source_file").distinct().collect()                
+                rows = df_filtered.select("source_file").distinct().collect()   
+                print(rows)             
                 paths = [row.source_file for row in rows]                
                 if not paths:
                     # Just return the current empty batch but with the schema applied

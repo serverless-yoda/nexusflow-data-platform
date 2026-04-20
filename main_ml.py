@@ -46,7 +46,7 @@ def main():
         generator.generate_ml_customers(f"{base_path}/landing/ml_data")
 
         # 2. Seed Dirty CSV (The 'Legacy Path')
-        generator.generate_ml_transactions(f"{base_path}/landing/ml_data", num_records=5000)
+        generator.generate_ml_transactions(f"{base_path}/landing/ml_data", num_records=2)
             
     except Exception as e:
         print(f"⚠️  Data Generator skipped or failed: {e}")

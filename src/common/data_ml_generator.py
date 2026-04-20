@@ -50,7 +50,7 @@ class NexusMLDataGenerator:
         # Inject ML Noise (Missing values)
         data[0]["customer_id"] = None # To test join failures
         
-        self._write(data, f"{destination_path}/transactions_ml", "json")
+        self._write(data, f"{destination_path}/transactions_ml", "parquet")
 
     def _write(self, data, path, format):
         clean_path = ("." + path if path.startswith("/") else path).replace("\\", "/")

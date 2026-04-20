@@ -1,5 +1,5 @@
 settings:
-  run_mode: "databricks"
+  run_mode: "local"
   catalog: "nff_catalog_e0b8_dev"
   local_base_path: "./data"
   cloud_base_path: "abfss://data@nexuse0b8storagedev.dfs.core.windows.net"
@@ -29,7 +29,7 @@ tables:
   # --- SILVER: FACT (Behavioral Signal) ---
   - name: "transactions_ml_silver"
     type: "silver"
-    format: "json"
+    format: "parquet"
     source_table: "bronze_raw.ml_universal"
     target_table: "silver_refined.transactions_ml"
     merge_key: "tx_id"
