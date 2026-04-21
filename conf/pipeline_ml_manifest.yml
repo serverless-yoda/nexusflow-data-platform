@@ -1,8 +1,8 @@
 settings:
-  run_mode: "local"
-  catalog: "nff_catalog_e0b8_dev"
+  run_mode: "databricks"
+  catalog: "nff_catalog_f586_dev"
   local_base_path: "./data"
-  cloud_base_path: "abfss://data@nexuse0b8storagedev.dfs.core.windows.net"
+  cloud_base_path: "abfss://data@nexusf586storagedev.dfs.core.windows.net"
 
 tables:
   # --- BRONZE ---

@@ -39,7 +39,7 @@ def main():
     # Skip files deleted between Auto Loader notification and read (re-seeded landing data)
     spark.conf.set("spark.sql.files.ignoreMissingFiles", "true")
 
-    print("🛠️  Running Local Data Generator...")        
+    print(f"🛠️  Running {run_mode} Data Generator...")        
     try:            
         generator = NexusMLDataGenerator(spark)            
         # 1. Seed Clean Parquet (The 'Fast Path')

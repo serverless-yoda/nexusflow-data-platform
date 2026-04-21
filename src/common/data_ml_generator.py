@@ -21,7 +21,16 @@ class NexusMLDataGenerator:
             tenure_months = random.randint(1, 60)
             
             # HIDDEN SIGNAL: Target logic
-            is_churned = 1 if (support_tickets > 7 or tenure_months < 3) else 0
+            churn_chance = 0.1 # Base 10% chance
+
+            if support_tickets > 7:
+                churn_chance += 0.6 # High tickets increase risk significantly
+            if tenure_months < 3:
+                churn_chance += 0.2 # New customers are riskier
+
+            # The Final Label is decided by a 'coin flip' based on the chance
+            is_churned = 1 if random.random() < churn_chance else 0
+            #is_churned = 1 if (support_tickets > 7 or tenure_months < 3) else 0
 
             data.append({
                 "customer_id": c_id,
