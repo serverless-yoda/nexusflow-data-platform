@@ -26,6 +26,11 @@ def main():
         shutil.rmtree("./data", ignore_errors=True)  
         shutil.rmtree("./spark_temp", ignore_errors=True)  
         shutil.rmtree("./spark_warehouse", ignore_errors=True)  
+    else:
+        dbutils.fs.rm(f"{base_path}/checkpoints", True)
+        print(f"deleting {base_path}/checkpoints completed")
+        dbutils.fs.rm(f"{base_path}/landing", True)
+        print(f"deleting {base_path}/landing completed")
 
     # Initialize Session
     spark = NexusSpark.get_session(run_mode)
@@ -35,6 +40,10 @@ def main():
     if catalog and run_mode != "local":
         spark.sql(f"USE CATALOG {catalog}")
         print(f"📦 Active catalog set to: {catalog}")
+        for table_cfg in config['tables']:
+            spark.sql(f"DROP TABLE IF EXISTS {table_cfg['target_table']}")
+            print(f"deleting table {table_cfg['target_table']} completed")
+                      
 
     # Skip files deleted between Auto Loader notification and read (re-seeded landing data)
     spark.conf.set("spark.sql.files.ignoreMissingFiles", "true")
