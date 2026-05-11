@@ -1,16 +1,20 @@
 # src/core/transformer_factory.py
-from pyspark.sql import DataFrame
+import logging
 import pyspark.sql.functions as F
+
+from pyspark.sql import DataFrame
 from src.interfaces.processor import ITransformer
 from pyspark.sql.types import StructType, StructField, StringType
 
-class SilverTransformerStrategy(ITransformer):
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("NexusDataPlatform")    
+class _SilverTransformerStrategy(ITransformer):
     def __init__(self, spark, cfg):
         # This line is critical!
         self.spark = spark 
         self.target_schema = cfg.get('schema')
         if self.target_schema is None:
-            print(f'⚠️ WARNING: No schema defined for {cfg.get("name")}.Table name is {cfg.get("target_table")}. This may lead to processing errors.')
+            logger.warning(f'⚠️ WARNING: No schema defined for {cfg.get("name")}.Table name is {cfg.get("target_table")}. This may lead to processing errors.')
             raise ValueError(f"Schema is missing in configuration for table: {cfg.get('table_name')}")
 
         self.fmt = cfg.get('format', 'json')
@@ -87,7 +91,7 @@ class SilverTransformerStrategy(ITransformer):
             if has_payload:
                 processed_df = self.process_dynamic_payload(df_filtered)
             else:
-                print(f'⚠️ Processing CSV without payload. This is unexpected for CSV format. ')
+                logger.warning(f'⚠️ Processing CSV without payload. This is unexpected for CSV format. ')
                 processed_df = df_filtered
         else:
             raise ValueError(f"Unsupported format: {self.fmt}")
@@ -108,7 +112,62 @@ class SilverTransformerStrategy(ITransformer):
         # this will give a clearer error than the AnalysisException
         new_df_processed = processed_df.withColumn("is_valid", F.expr(quality_expr))
         return new_df_processed
-            
+
+class SilverTransformerStrategy(ITransformer):
+    def __init__(self, spark, cfg):
+        self.spark = spark 
+        self.cfg = cfg
+        self.fmt = cfg.get('format', 'json').lower()
+        self.rules = cfg.get('rules', [])
+        
+    def transform(self, df: DataFrame) -> DataFrame:
+        """Main entry point for transformation."""
+        # 1. Extract based on format
+        if self.fmt == "parquet":
+            processed_df = self._extract_parquet(df)
+        elif self.fmt == "json":
+            processed_df = self._extract_json(df)
+        else:
+            raise ValueError(f"Unsupported format: {self.fmt}")
+
+        # 2. Quality Rules with Reason Tracking
+        return self._apply_quality_rules(processed_df)
+
+    def _extract_json(self, df):
+        target_schema = self.cfg.get('schema')
+        if "payload" in df.columns:
+            return (df.withColumn("data", F.from_json(F.col("payload"), target_schema))
+                    .select("data.*", "ingested_at", "source_file"))
+        return df
+
+    def _extract_parquet(self, df):
+        # Handle the local vs cloud logic internally
+        if "payload" in df.columns:
+            paths = [row.source_file for row in df.select("source_file").distinct().collect()]
+            if not paths: return self.spark.createDataFrame([], self.cfg.get('schema'))
+            clean_paths = [p.replace("file:///", "").replace("%20", " ") for p in paths]
+            return self.spark.read.schema(self.cfg.get('schema')).parquet(*clean_paths)
+        return df
+
+    def _apply_quality_rules(self, df):
+        """
+        Production Tip: Instead of a simple boolean, we build an array of failed rules.
+        """
+        if not self.rules:
+            return df.withColumn("is_valid", F.lit(True)).withColumn("failure_reasons", F.lit(None))
+
+        # Create a mapping of rule_name -> condition
+        # Example: "amount_check": "amount > 0"
+        rule_exprs = []
+        for i, rule in enumerate(self.rules):
+            # We wrap each rule to return the string description if it fails
+            rule_exprs.append(F.when(F.expr(rule), None).otherwise(F.lit(rule)))
+
+        return (df
+            .withColumn("failure_reasons", F.array_remove(F.array(*rule_exprs), None))
+            .withColumn("is_valid", F.size(F.col("failure_reasons")) == 0)
+        )
+               
 class GoldTransformerStrategy(ITransformer):
     def __init__(self, table_cfg, spark):
         self.spark = spark

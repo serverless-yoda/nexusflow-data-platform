@@ -8,6 +8,11 @@ from src.interfaces.processor import IProcessor
 from src.core.transformer_factory import TransformerFactory
 from src.common.path_resolver import PathResolver
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("NexusDataPlatform") 
+
 # Explicit schema for binaryFile format to override stale Auto Loader schema caches
 _BINARY_FILE_SCHEMA = StructType([
     StructField("path", StringType()),
@@ -113,7 +118,7 @@ class BronzeProcessor(BaseProcessor, IProcessor):
         query.awaitTermination()
         print(f"✅ Bronze processing completed for {self.cfg['name']}. Table name is {self.cfg['target_table']}")
 
-class SilverProcessor(BaseProcessor, IProcessor):
+class _SilverProcessor(BaseProcessor, IProcessor):
 
     def process(self):
         #print(f"DEBUG: Config for transformer: {self.cfg}")
@@ -179,6 +184,61 @@ class SilverProcessor(BaseProcessor, IProcessor):
             .start()
             .awaitTermination()
         )
+
+class SilverProcessor(BaseProcessor, IProcessor):
+    def process(self):
+        transformer = TransformerFactory.get_transformer(self.spark, self.cfg)
+        source_table = self.cfg['source_table']
+        
+        if not self.spark.catalog.tableExists(source_table):
+            logger.error(f"Source table {source_table} missing. Aborting.")
+            return
+
+        def micro_batch(batch_df, batch_id):
+            # 1. Transform and Cache
+            processed = transformer.transform(batch_df).cache()
+            
+            # 2. Split Data
+            valid_df = processed.filter("is_valid == true").drop("is_valid", "failure_reasons")
+            quarantine_df = processed.filter("is_valid == false")
+
+            # 3. Audit and Write Valid
+            if valid_df.count() > 0:
+                valid_with_audit = self._add_audit_metadata(valid_df)
+                self._upsert_data(valid_with_audit)
+            
+            # 4. Write Quarantine with 'reasons'
+            if quarantine_df.count() > 0:
+                quarantine_table = f"{self.cfg['target_table']}_quarantine"
+                (quarantine_df
+                    .withColumn("_quarantine_at", F.current_timestamp())
+                    .write.format("delta")
+                    .mode("append")
+                    .option("mergeSchema", "true")
+                    .saveAsTable(quarantine_table))
+                
+            logger.info(f"Batch {batch_id}: {valid_df.count()} Valid, {quarantine_df.count()} Quarantined.")
+            processed.unpersist()
+
+        # Stream initialization...
+        self.spark.readStream.table(source_table) \
+            .writeStream.foreachBatch(micro_batch) \
+            .option("checkpointLocation", self.checkpoint) \
+            .trigger(availableNow=True).start().awaitTermination()
+
+    def _upsert_data(self, df):
+        """Helper to handle Delta Merge logic."""
+        merge_key = self.cfg.get('merge_key')
+        target = self.cfg['target_table']
+        
+        if merge_key and self.spark.catalog.tableExists(target):
+            dt = DeltaTable.forName(self.spark, target)
+            dt.alias("t").merge(df.alias("s"), f"t.{merge_key} = s.{merge_key}") \
+                .whenMatchedUpdateAll() \
+                .whenNotMatchedInsertAll() \
+                .execute()
+        else:
+            df.write.format("delta").mode("append").saveAsTable(target)
 
 class GoldProcessor(BaseProcessor, IProcessor):
     def process(self):
